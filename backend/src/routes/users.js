@@ -2,6 +2,7 @@ import { Router } from "express";
 import { query, mapUser } from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { cacheInvalidate } from "../cache.js";
+import { createNotification } from "../services/notifications.js";
 
 const router = Router();
 
@@ -79,6 +80,7 @@ router.post("/mentors/:mentorId/request", requireAuth, requireRole("user"), asyn
     "UPDATE users SET mentor_id = $1, mentor_status = 'pending' WHERE id = $2 RETURNING *",
     [req.params.mentorId, req.user.id]
   );
+  await createNotification(req.params.mentorId, "mentor", "Новая заявка на наставничество", `${req.user.fullName} хочет стать вашим подопечным.`, `#/mentees/${req.user.id}`);
   res.json({ user: mapUser(rows[0]) });
 });
 
@@ -88,6 +90,7 @@ router.post("/mentees/:menteeId/confirm", requireAuth, requireRole("mentor"), as
     [req.params.menteeId, req.user.id]
   );
   if (!rows[0]) return res.status(404).json({ error: "Заявка не найдена" });
+  await createNotification(req.params.menteeId, "mentor", "Наставник подтвердил заявку", `${req.user.fullName} подтвердил вашу пару. Теперь доступны чат, файлы и видеовстречи.`, "#/mentor");
   res.json({ user: mapUser(rows[0]) });
 });
 
@@ -97,6 +100,7 @@ router.post("/mentees/:menteeId/decline", requireAuth, requireRole("mentor"), as
     [req.params.menteeId, req.user.id]
   );
   if (!rows[0]) return res.status(404).json({ error: "Заявка не найдена" });
+  await createNotification(req.params.menteeId, "mentor", "Заявка отклонена", `${req.user.fullName} не смог принять заявку. Вы можете выбрать другого наставника.`, "#/mentor");
   res.json({ user: mapUser(rows[0]) });
 });
 

@@ -20,6 +20,9 @@ import cronRoutes from "./routes/cron.js";
 import groupRoutes from "./routes/groups.js";
 import testRoutes from "./routes/tests.js";
 import assignmentRoutes from "./routes/assignments.js";
+import notificationRoutes from "./routes/notifications.js";
+import fileRoutes from "./routes/files.js";
+import reportRoutes from "./routes/reports.js";
 
 await initSchema();
 await seedIfEmpty();
@@ -28,7 +31,7 @@ const app = express();
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
 app.use(cors(process.env.CORS_ORIGIN ? { origin: process.env.CORS_ORIGIN.split(",").map((item) => item.trim()) } : undefined));
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "8mb" }));
 app.use(morgan("tiny"));
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -55,6 +58,9 @@ app.use("/api/cron", cronRoutes);
 app.use("/api/groups", groupRoutes);
 app.use("/api/tests", testRoutes);
 app.use("/api/assignments", assignmentRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/files", fileRoutes);
+app.use("/api/reports", reportRoutes);
 
 // При обычном запуске один Node-процесс раздаёт и API, и фронтенд.
 // Это позволяет опубликовать сервис одной бесплатной публичной ссылкой.

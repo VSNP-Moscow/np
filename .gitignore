@@ -4,4 +4,5 @@ backend/src/data/*.sqlite
 backend/src/data/*.sqlite-*
 node_modules/
 .vercel/
-
+output/
+tmp/

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { query } from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { awardCoins, REWARDS } from "../services/gamification.js";
+import { createNotification } from "../services/notifications.js";
 
 const router = Router();
 
@@ -48,7 +49,10 @@ router.post("/", requireAuth, requireRole("mentor"), async (req, res) => {
   for (const uid of targetIds) {
     // назначаем только своим подтверждённым подопечным — защищает от произвольного userId
     const ok = await query("SELECT id FROM users WHERE id = $1 AND mentor_id = $2 AND mentor_status = 'confirmed'", [uid, req.user.id]);
-    if (ok.rows[0]) await query("INSERT INTO assignment_targets (assignment_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING", [assignment.id, uid]);
+    if (ok.rows[0]) {
+      await query("INSERT INTO assignment_targets (assignment_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING", [assignment.id, uid]);
+      await createNotification(uid, "assignment", "Новое задание", `${req.user.fullName}: ${assignment.title}`, `#/assignments/${assignment.id}`);
+    }
   }
   res.json({ assignment: mapAssignment(assignment), targetCount: targetIds.size });
 });
@@ -115,6 +119,7 @@ router.post("/:id/submit", requireAuth, async (req, res) => {
     const passRatio = total ? score / total : 0;
     await awardCoins(req.user.id, assignment.coin_reward, `Задание сдано: ${assignment.title}`);
     if (passRatio >= 0.8) await awardCoins(req.user.id, REWARDS.ASSIGNMENT_GRADED_BONUS, `Высокий результат теста: ${assignment.title}`);
+    await createNotification(assignment.mentor_id, "assignment", "Педагог выполнил тест", `${req.user.fullName}: ${assignment.title} — ${score}/${total}`, `#/assignments/${assignment.id}`);
     return res.json({ target: mapTarget(rows[0]) });
   }
 
@@ -126,6 +131,7 @@ router.post("/:id/submit", requireAuth, async (req, res) => {
   );
   if (!rows[0]) return res.status(404).json({ error: "Задание вам не назначено" });
   await awardCoins(req.user.id, REWARDS.ASSIGNMENT_SUBMITTED, `Задание сдано: ${assignment.title}`);
+  await createNotification(assignment.mentor_id, "assignment", "Задание отправлено на проверку", `${req.user.fullName}: ${assignment.title}`, `#/assignments/${assignment.id}`);
   res.json({ target: mapTarget(rows[0]) });
 });
 
@@ -142,6 +148,7 @@ router.post("/:id/grade/:userId", requireAuth, requireRole("mentor"), async (req
   if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
   const ratio = total ? (score || 0) / total : 0;
   if (ratio >= 0.8) await awardCoins(req.params.userId, REWARDS.ASSIGNMENT_GRADED_BONUS, `Наставник высоко оценил задание: ${owner.rows[0].title}`);
+  await createNotification(req.params.userId, "assignment", "Задание проверено", `${owner.rows[0].title}: ${score ?? "—"}/${total ?? "—"}. ${feedback || ""}`, `#/assignments/${req.params.id}`);
   res.json({ target: mapTarget(rows[0]) });
 });
 

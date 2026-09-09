@@ -45,6 +45,25 @@
     return data;
   }
 
+  async function download(path, filename) {
+    const headers = TOKEN ? { Authorization: "Bearer " + TOKEN } : {};
+    const res = await fetch(API_BASE + path, { headers });
+    if (!res.ok) {
+      let data = null;
+      try { data = await res.json(); } catch (e) { /* binary or empty response */ }
+      throw new Error(data?.error || `Ошибка загрузки (${res.status})`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename || "download";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   const API = {
     ROLE, COMPETENCIES, ALGO_STAGES, NOTE_CATS,
     apiBase: API_BASE,
@@ -124,7 +143,17 @@
 
     // ---- messages ----
     async listMessages(otherId) { const data = await request("GET", "/messages/" + otherId); return data.messages; },
-    async sendMessage(otherId, text) { const data = await request("POST", "/messages/" + otherId, { text }); return data.message; },
+    async sendMessage(otherId, text, attachment) { const data = await request("POST", "/messages/" + otherId, { text, attachment }); return data.message; },
+    async startVideoCall(otherId) { return request("POST", `/messages/${otherId}/video-call`); },
+
+    // ---- files ----
+    async listFiles() { const data = await request("GET", "/files"); return data.files; },
+    async downloadFile(id, name) { return download(`/files/${id}`, name); },
+
+    // ---- notifications ----
+    async getNotifications() { return request("GET", "/notifications"); },
+    async readNotification(id) { return request("POST", `/notifications/${id}/read`); },
+    async readAllNotifications() { return request("POST", "/notifications/read-all"); },
 
     // ---- AI ----
     async aiStatus() { return request("GET", "/ai/status"); },
@@ -143,6 +172,9 @@
     async getNudge() { return request("GET", "/ai/nudge"); },
     async getTips(competencyId) { return request("GET", "/ai/tips/" + competencyId); },
     async getPortfolio(force) { return request("GET", "/ai/portfolio" + (force ? "?force=1" : "")); },
+    async addPortfolioItem(item) { const data = await request("POST", "/ai/portfolio/items", item); return data.item; },
+    async deletePortfolioItem(id) { return request("DELETE", "/ai/portfolio/items/" + id); },
+    async downloadPortfolioPdf() { return download("/ai/portfolio/pdf", "Портфолио.pdf"); },
     async mentorRateProgress(id, mentorRating) { const data = await request("POST", `/ai/roadmap/progress/${id}/mentor-rate`, { mentorRating }); return data.progress; },
     async menteeReports() { const data = await request("GET", "/ai/roadmap/progress/mentees"); return data.progress; },
 
@@ -173,6 +205,10 @@
     async submitAssignment(id, payload) { const data = await request("POST", `/assignments/${id}/submit`, payload); return data.target; },
     async gradeAssignment(id, userId, score, total, feedback) { const data = await request("POST", `/assignments/${id}/grade/${userId}`, { score, total, feedback }); return data.target; },
     async deleteAssignment(id) { return request("DELETE", "/assignments/" + id); },
+
+    // ---- reports ----
+    async getReport() { return request("GET", "/reports/summary"); },
+    async downloadReportCsv() { return download("/reports/export.csv", "Отчёт.csv"); },
   };
 
   global.API = API;

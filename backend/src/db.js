@@ -175,7 +175,14 @@ export function mapNote(row) {
 
 export function mapMessage(row) {
   if (!row) return null;
-  return { id: row.id, from: row.from_user_id, to: row.to_user_id, text: row.text, ts: row.created_at instanceof Date ? row.created_at.getTime() : row.created_at };
+  return {
+    id: row.id,
+    from: row.from_user_id,
+    to: row.to_user_id,
+    text: row.text,
+    readAt: row.read_at instanceof Date ? row.read_at.getTime() : row.read_at,
+    ts: row.created_at instanceof Date ? row.created_at.getTime() : row.created_at,
+  };
 }
 
 export async function initSchema() {

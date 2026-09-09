@@ -125,22 +125,31 @@
       { id: "dashboard", label: "Дашборд", icon: "🏠" }, { id: "assistant", label: "ИИ-наставник", icon: "🤖" },
       { id: "roadmap", label: "Дорожная карта", icon: "🗺️" }, { id: "events", label: "Мероприятия", icon: "📅" },
       { id: "assignments", label: "Задания", icon: "📮" },
-      { id: "mentor", label: "Мой наставник", icon: "🤝" }, { id: "notes", label: "Заметки", icon: "📝" }, { id: "profile", label: "Профиль", icon: "⚙️" },
+      { id: "mentor", label: "Мой наставник", icon: "🤝" }, { id: "portfolio", label: "Портфолио", icon: "🎓" },
+      { id: "files", label: "Файлы", icon: "📎" }, { id: "reports", label: "Отчёты", icon: "📊" },
+      { id: "notifications", label: "Уведомления", icon: "🔔" }, { id: "notes", label: "Заметки", icon: "📝" }, { id: "profile", label: "Профиль", icon: "⚙️" },
     ],
     mentor: [
       { id: "dashboard", label: "Дашборд", icon: "🏠" }, { id: "mentees", label: "Мои педагоги", icon: "🎓" },
       { id: "groups", label: "Группы", icon: "👨‍👩‍👧‍👦" }, { id: "assignments", label: "Задания", icon: "📮" }, { id: "tests", label: "Конструктор тестов", icon: "🧩" },
-      { id: "events", label: "Мероприятия", icon: "📅" }, { id: "notes", label: "Заметки", icon: "📝" }, { id: "profile", label: "Профиль", icon: "⚙️" },
+      { id: "events", label: "Мероприятия", icon: "📅" }, { id: "files", label: "Файлы", icon: "📎" },
+      { id: "reports", label: "Отчёты", icon: "📊" }, { id: "notifications", label: "Уведомления", icon: "🔔" },
+      { id: "notes", label: "Заметки", icon: "📝" }, { id: "profile", label: "Профиль", icon: "⚙️" },
     ],
     admin: [
       { id: "dashboard", label: "Дашборд", icon: "🏠" }, { id: "users", label: "Педагоги и наставники", icon: "👥" },
-      { id: "events", label: "Мероприятия", icon: "📅" }, { id: "notes", label: "Заметки", icon: "📝" }, { id: "profile", label: "Профиль", icon: "⚙️" },
+      { id: "events", label: "Мероприятия", icon: "📅" }, { id: "reports", label: "Отчёты", icon: "📊" },
+      { id: "notifications", label: "Уведомления", icon: "🔔" }, { id: "notes", label: "Заметки", icon: "📝" }, { id: "profile", label: "Профиль", icon: "⚙️" },
     ],
   };
 
   let currentView = "dashboard";
   let currentSub = null;
   let AI_LIVE = false;
+  let chatPollTimer = null;
+  let notificationPollTimer = null;
+  let lastUnreadCount = 0;
+  let renderEpoch = 0;
 
   async function enterApp() {
     $("#landing").classList.add("hidden");
@@ -155,9 +164,12 @@
       window.__NP_AI_MODEL = st.model;
     } catch (e) { AI_LIVE = false; }
     await renderShell();
+    startNotificationPolling();
   }
 
   function logout() {
+    clearInterval(chatPollTimer);
+    clearInterval(notificationPollTimer);
     API.logout();
     $("#shell").classList.add("hidden");
     $("#landing").classList.remove("hidden");
@@ -178,6 +190,9 @@
     const shell = $("#shell");
     shell.innerHTML = "";
     const navItems = NAV[user.role] || NAV.user;
+    let unread = 0;
+    try { unread = (await API.getNotifications()).unread || 0; } catch (e) { /* notifications are non-blocking */ }
+    lastUnreadCount = unread;
 
     const sidebar = el("div", { class: "sidebar", id: "sidebar" });
     sidebar.appendChild(el("div", { class: "brand" }, [el("span", { class: "brand-mark" }, ["🧭"]), " НавигаторПедагога"]));
@@ -193,7 +208,9 @@
     }
 
     navItems.forEach(n => {
-      const link = el("div", { class: "nav-link" + (n.id === currentView ? " active" : ""), "data-view": n.id }, [el("span", { class: "ic" }, [n.icon]), n.label]);
+      const children = [el("span", { class: "ic" }, [n.icon]), el("span", { class: "nav-label" }, [n.label])];
+      if (n.id === "notifications" && unread) children.push(el("span", { class: "nav-count" }, [String(unread)]));
+      const link = el("div", { class: "nav-link" + (n.id === currentView ? " active" : ""), "data-view": n.id }, children);
       link.addEventListener("click", () => go(n.id));
       sidebar.appendChild(link);
     });
@@ -216,6 +233,26 @@
     await renderMain();
   }
 
+  function startNotificationPolling() {
+    clearInterval(notificationPollTimer);
+    notificationPollTimer = setInterval(async () => {
+      if (!API.isLoggedIn()) return;
+      try {
+        const data = await API.getNotifications();
+        const count = data.unread || 0;
+        const link = document.querySelector('.nav-link[data-view="notifications"]');
+        let badge = link?.querySelector(".nav-count");
+        if (count && link && !badge) { badge = el("span", { class: "nav-count" }); link.appendChild(badge); }
+        if (badge) { badge.textContent = String(count); badge.classList.toggle("hidden", !count); }
+        if (count > lastUnreadCount && data.notifications[0]) {
+          toast(data.notifications[0].title);
+          if (window.Notification?.permission === "granted") new Notification(data.notifications[0].title, { body: data.notifications[0].body });
+        }
+        lastUnreadCount = count;
+      } catch (e) { /* background refresh should stay quiet */ }
+    }, 15000);
+  }
+
   function coinWidget(user) {
     const xp = user.xp || 0;
     const level = Math.floor(xp / 100) + 1;
@@ -236,11 +273,16 @@
   }
 
   async function renderMain() {
-    const main = $("#mainArea");
-    if (!main) return;
+    const epoch = ++renderEpoch;
+    clearInterval(chatPollTimer);
+    chatPollTimer = null;
+    const mainArea = $("#mainArea");
+    if (!mainArea) return;
     const user = API.getCurUser();
     if (!user) { logout(); return; }
-    main.innerHTML = "";
+    mainArea.innerHTML = "";
+    const main = el("div", { class: "view-root" });
+    mainArea.appendChild(main);
     main.appendChild(el("div", { class: "empty-state" }, [el("div", { class: "typing-dots" }, [el("span"), el("span"), el("span")])]));
 
     try {
@@ -257,14 +299,23 @@
       if (view === "tests") return await renderTestsView(main, user);
       if (view === "assignments") return await renderAssignmentsView(main, user);
       if (view === "users") return await renderUsersView(main, user);
+      if (view === "portfolio") return await renderPortfolio(main, user);
+      if (view === "files") return await renderFiles(main, user);
+      if (view === "reports") return await renderReports(main, user);
+      if (view === "notifications") return await renderNotifications(main, user);
       if (view === "profile") return await renderProfile(main, user);
       await renderDashboard(main, user);
-    } catch (e) { main.innerHTML = ""; apiErr(e); main.appendChild(emptyState("⚠️", "Не удалось загрузить данные", e.message)); }
+    } catch (e) {
+      if (epoch !== renderEpoch) return;
+      main.innerHTML = "";
+      apiErr(e);
+      main.appendChild(emptyState("⚠️", "Не удалось загрузить данные", e.message));
+    }
   }
 
   function topbar(main, title, sub, actions) {
     const bar = el("div", { class: "topbar" }, [el("div", {}, [el("h1", {}, [title]), sub ? el("div", { class: "sub" }, [sub]) : null])]);
-    if (actions) { const a = el("div", { style: "display:flex; gap:10px;" }); actions.forEach(x => a.appendChild(x)); bar.appendChild(a); }
+    if (actions) { const a = el("div", { class: "topbar-actions" }); actions.forEach(x => a.appendChild(x)); bar.appendChild(a); }
     main.appendChild(bar);
   }
 
@@ -411,7 +462,7 @@
     if (!AI_LIVE) {
       main.appendChild(el("div", { class: "card", style: "margin-top:18px; border-color:var(--yellow-pastel-2);" }, [
         el("div", { class: "card-title" }, ["⚠️ ИИ работает в офлайн-режиме"]),
-        el("p", { style: "font-size:13.5px; color:var(--ink-soft);" }, ["Поиск реальных мероприятий по регионам недоступен. На сервере задайте GROQ_API_KEY и перезапустите сервер — см. README."]),
+        el("p", { style: "font-size:13.5px; color:var(--ink-soft);" }, ["Поиск реальных мероприятий по регионам недоступен. Проверьте ключ AI-провайдера в настройках Render и перезапустите сервис."]),
       ]));
     }
     const card = el("div", { class: "card", style: "margin-top:18px;" }, [el("div", { class: "card-title" }, ["👥 Молодые педагоги"])]);
@@ -435,6 +486,10 @@
     let history = chatData.messages || [];
     const diagActive = chatData.diagnosticActive;
     diagnosticActiveFlag = diagActive;
+
+    if (chatData.diagnosticProgress?.started && !chatData.diagnosticProgress.done) {
+      shellDiv.insertBefore(diagnosticProgressNode(chatData.diagnosticProgress), scroll);
+    }
 
     if (!history.length && !API.hasScores(user) && !diagActive) {
       scroll.appendChild(introCard(user));
@@ -476,13 +531,35 @@
       el("div", { style: "font-size:38px; margin-bottom:10px;" }, ["🤖"]),
       el("h3", { style: "margin-bottom:8px;" }, ["Здравствуйте, " + user.fullName.split(" ")[0] + "!"]),
       el("p", { style: "color:var(--ink-soft); font-size:14.5px; margin-bottom:18px;" }, [
-        `Я — ваш ИИ-наставник. Поговорим о 6 направлениях компетенций, а по итогам я ${AI_LIVE ? "найду для вас реальные мероприятия в интернете (регион: " + (user.region || "не указан") + ") и " : ""}соберу дорожную карту.`,
+        `Я — ваш ИИ-наставник. Разберём 18 реальных рабочих ситуаций по 6 направлениям компетенций. Можно отвечать своими словами: ИИ оценит контекст, уточнит затруднения и ${AI_LIVE ? "подберёт мероприятия для региона «" + (user.region || "не указан") + "»" : "соберёт персональный профиль"}.`,
       ]),
     ]);
     const btn = el("button", { class: "btn btn-primary" }, ["Начать диагностику 💬"]);
     btn.addEventListener("click", () => beginDiagnostic(user, $("#chatScroll")));
     card.appendChild(btn);
     return card;
+  }
+
+  function diagnosticProgressNode(progress) {
+    const competency = API.competency(progress.competency);
+    return el("div", { class: "diagnostic-progress", id: "diagnosticProgress" }, [
+      el("div", { class: "diagnostic-progress-head" }, [
+        el("span", { id: "diagnosticProgressLabel" }, [`${competency?.icon || "🧭"} Вопрос ${progress.current} из ${progress.total}`]),
+        el("b", { id: "diagnosticProgressPercent" }, [`${progress.percent}%`]),
+      ]),
+      el("div", { class: "diagnostic-progress-track" }, [el("div", { id: "diagnosticProgressFill", style: `width:${progress.percent}%;` })]),
+    ]);
+  }
+
+  function updateDiagnosticProgress(progress) {
+    if (!progress?.started) return;
+    const competency = API.competency(progress.competency);
+    const label = $("#diagnosticProgressLabel");
+    const percent = $("#diagnosticProgressPercent");
+    const fill = $("#diagnosticProgressFill");
+    if (label) label.textContent = `${competency?.icon || "🧭"} Вопрос ${progress.current} из ${progress.total}`;
+    if (percent) percent.textContent = `${progress.percent}%`;
+    if (fill) fill.style.width = `${progress.percent}%`;
   }
 
   async function beginDiagnostic(user, scroll) {
@@ -533,6 +610,7 @@
       if (wasDiagnosticActive) {
         const res = await API.replyDiagnostic(text);
         diagnosticActiveFlag = res.diagnosticActive;
+        updateDiagnosticProgress(res.diagnosticProgress);
         typing.remove();
         res.messages.forEach(m => scroll.appendChild(renderMsg(m)));
         scroll.scrollTop = scroll.scrollHeight;
@@ -597,7 +675,7 @@
     renderRoadmapContent(main, rm, progress, user.currentStage);
 
     // "постоянно обновляющийся список мероприятий": если карта старше 4 дней, тихо обновляем в фоне,
-    // не более раза в сутки на клиенте, чтобы не спамить бесплатную квоту Groq.
+    // Не более раза в сутки на клиенте, чтобы бережно расходовать квоту AI-провайдера.
     const todayKey = "np-auto-refresh-" + new Date().toISOString().slice(0, 10);
     if (rm.stale && !localStorage.getItem(todayKey)) {
       localStorage.setItem(todayKey, "1");
@@ -1080,26 +1158,109 @@
 
   async function chatCard(otherUser) {
     const card = el("div", { class: "card", style: "margin-top:16px; padding:0; overflow:hidden;" });
-    card.appendChild(el("div", { class: "card-title", style: "padding:18px 18px 0;" }, ["💬 Чат с " + otherUser.fullName.split(" ")[0]]));
-    const scroll = el("div", { style: "max-height:360px; overflow-y:auto; padding:14px 18px;" });
-    const msgs = await API.listMessages(otherUser.id);
-    const myId = API.getCurUser().id;
-    if (!msgs.length) scroll.appendChild(el("p", { style: "color:var(--ink-faint); font-size:13px;" }, ["Сообщений пока нет — начните разговор."]));
-    msgs.forEach(m => {
-      const mine = m.from === myId;
-      scroll.appendChild(el("div", { class: "msg-row " + (mine ? "me" : "ai"), style: "margin-bottom:10px;" }, [el("div", { class: "msg-bubble", style: mine ? "" : "background:var(--bg-alt); border:1px solid var(--border);" }, [m.text])]));
+    const head = el("div", { class: "chat-peer-head" }, [
+      el("div", {}, [el("div", { class: "card-title" }, ["💬 Чат с " + otherUser.fullName.split(" ")[0]]), el("div", { class: "chat-live-status" }, ["● Обновляется автоматически"])]),
+    ]);
+    const video = el("button", { class: "btn btn-secondary btn-sm", title: "Начать видеовстречу" }, ["🎥 Видеовстреча"]);
+    video.addEventListener("click", async () => {
+      const callWindow = window.open("about:blank", "_blank");
+      try {
+        const data = await API.startVideoCall(otherUser.id);
+        if (callWindow) callWindow.location.href = data.room; else window.open(data.room, "_blank", "noopener");
+        toast("Приглашение на видеовстречу отправлено");
+      } catch (e) { if (callWindow) callWindow.close(); apiErr(e); }
     });
+    head.appendChild(video);
+    card.appendChild(head);
+    const scroll = el("div", { class: "peer-chat-scroll" });
+    const myId = API.getCurUser().id;
+    let latestMessageId = null;
+    const renderMessages = (msgs) => {
+      const nearBottom = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 70;
+      scroll.innerHTML = "";
+      if (!msgs.length) scroll.appendChild(el("p", { class: "chat-empty" }, ["Сообщений пока нет — начните разговор."]));
+      msgs.forEach(m => {
+        const mine = m.from === myId;
+        const bubble = el("div", { class: "msg-bubble" }, [m.text]);
+        if (m.attachment) {
+          const fileBtn = el("button", { class: "message-file", title: "Скачать файл" }, [
+            el("span", { class: "message-file-icon" }, ["📎"]),
+            el("span", {}, [el("b", {}, [m.attachment.name]), el("small", {}, [formatFileSize(m.attachment.size)])]),
+          ]);
+          fileBtn.addEventListener("click", () => API.downloadFile(m.attachment.id, m.attachment.name).catch(apiErr));
+          bubble.appendChild(fileBtn);
+        }
+        const time = new Date(m.ts).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+        bubble.appendChild(el("span", { class: "message-time" }, [time + (mine && m.readAt ? " · прочитано" : "")]));
+        scroll.appendChild(el("div", { class: "msg-row " + (mine ? "me" : "ai") }, [bubble]));
+      });
+      latestMessageId = msgs[msgs.length - 1]?.id || null;
+      if (nearBottom || !scroll.dataset.ready) scroll.scrollTop = scroll.scrollHeight;
+      scroll.dataset.ready = "1";
+    };
+    renderMessages(await API.listMessages(otherUser.id));
     card.appendChild(scroll);
-    const bar = el("div", { style: "display:flex; gap:8px; padding:14px 18px; border-top:1px solid var(--border);" });
-    const input = el("input", { type: "text", placeholder: "Написать сообщение…", style: "flex:1; border:1.5px solid var(--border); border-radius:12px; padding:10px 14px; font-family:var(--font-body);" });
+    const composer = el("div", { class: "peer-chat-composer" });
+    const selected = el("div", { class: "selected-file hidden" });
+    const bar = el("div", { class: "peer-chat-bar" });
+    const input = el("input", { type: "text", placeholder: "Написать сообщение…" });
+    const fileInput = el("input", { type: "file", class: "hidden", accept: "image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt" });
+    const attach = el("button", { class: "icon-btn", title: "Прикрепить файл", "aria-label": "Прикрепить файл" }, ["📎"]);
     const send = el("button", { class: "btn btn-primary btn-sm" }, ["Отправить"]);
-    const doSend = async () => { const v = input.value.trim(); if (!v) return; await API.sendMessage(otherUser.id, v); input.value = ""; renderMain(); };
+    let attachment = null;
+    attach.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", async () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      if (file.size > 5 * 1024 * 1024) { toast("Максимальный размер файла — 5 МБ", true); fileInput.value = ""; return; }
+      try {
+        const data = await readFileData(file);
+        attachment = { name: file.name, type: file.type || "application/octet-stream", size: file.size, data };
+        selected.textContent = `📎 ${file.name} · ${formatFileSize(file.size)} · нажмите, чтобы убрать`;
+        selected.classList.remove("hidden");
+      } catch (e) { apiErr(e); }
+    });
+    selected.addEventListener("click", () => { attachment = null; fileInput.value = ""; selected.classList.add("hidden"); });
+    const doSend = async () => {
+      const value = input.value.trim();
+      if (!value && !attachment) return;
+      send.disabled = true;
+      try {
+        await API.sendMessage(otherUser.id, value, attachment);
+        input.value = ""; attachment = null; fileInput.value = ""; selected.classList.add("hidden");
+        renderMessages(await API.listMessages(otherUser.id));
+      } catch (e) { apiErr(e); }
+      finally { send.disabled = false; input.focus(); }
+    };
     send.addEventListener("click", doSend);
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") doSend(); });
-    bar.appendChild(input); bar.appendChild(send);
-    card.appendChild(bar);
+    bar.appendChild(attach); bar.appendChild(input); bar.appendChild(send); bar.appendChild(fileInput);
+    composer.appendChild(selected); composer.appendChild(bar); card.appendChild(composer);
     setTimeout(() => { scroll.scrollTop = scroll.scrollHeight; }, 0);
+    chatPollTimer = setInterval(async () => {
+      if (!["mentor", "mentees"].includes(currentView)) return;
+      try {
+        const messages = await API.listMessages(otherUser.id);
+        if ((messages[messages.length - 1]?.id || null) !== latestMessageId) renderMessages(messages);
+      } catch (e) { /* transient polling errors stay quiet */ }
+    }, 5000);
     return card;
+  }
+
+  function formatFileSize(bytes) {
+    if (!bytes) return "0 Б";
+    if (bytes < 1024) return `${bytes} Б`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} КБ`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
+  }
+
+  function readFileData(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+      reader.onerror = () => reject(new Error("Не удалось прочитать файл"));
+      reader.readAsDataURL(file);
+    });
   }
 
   /* =========================== MENTEES (for mentor role) =========================== */
@@ -1591,6 +1752,185 @@
     main.appendChild(delCard);
   }
 
+  /* =========================== PORTFOLIO =========================== */
+  async function renderPortfolio(main, user) {
+    if (user.role !== "user") { main.appendChild(emptyState("🎓", "Портфолио педагога", "Откройте профиль конкретного подопечного, чтобы посмотреть его результаты.")); return; }
+    const pdfBtn = el("button", { class: "btn btn-primary btn-sm" }, ["⬇ PDF"]);
+    pdfBtn.addEventListener("click", async () => {
+      pdfBtn.disabled = true; pdfBtn.textContent = "Собираю PDF…";
+      try { await API.downloadPortfolioPdf(); toast("PDF-портфолио готово"); }
+      catch (e) { apiErr(e); }
+      finally { pdfBtn.disabled = false; pdfBtn.textContent = "⬇ PDF"; }
+    });
+    const addBtn = el("button", { class: "btn btn-secondary btn-sm" }, ["+ Достижение"]);
+    addBtn.addEventListener("click", openPortfolioItemModal);
+    topbar(main, "🎓 Профессиональное портфолио", "Профиль компетенций, подтверждённые результаты и рефлексия", [addBtn, pdfBtn]);
+
+    const portfolio = await API.getPortfolio();
+    const cover = el("div", { class: "portfolio-cover" }, [
+      el("div", { class: "portfolio-cover-copy" }, [
+        el("span", { class: "portfolio-kicker" }, ["ЦИФРОВОЕ ПОРТФОЛИО · ЭТАП 6"]),
+        el("h2", {}, [portfolio.profile.fullName]),
+        el("p", {}, [`${portfolio.profile.subject} · ${portfolio.profile.school} · ${portfolio.profile.region}`]),
+      ]),
+      el("div", { class: "portfolio-stage" }, [el("b", {}, [String(portfolio.profile.stage)]), el("span", {}, ["этап из 6"])]),
+    ]);
+    main.appendChild(cover);
+
+    const metrics = el("div", { class: "grid-4 portfolio-metrics" });
+    [["green", "Мероприятий", portfolio.metrics.completedEvents], ["magenta", "Отчётов", portfolio.metrics.submittedReports], ["yellow", "Заданий", portfolio.metrics.completedAssignments], ["purple", "Материалов", portfolio.metrics.portfolioItems]].forEach(([color, label, value]) => metrics.appendChild(statTile(color, label, String(value))));
+    main.appendChild(metrics);
+
+    const overview = el("div", { class: "grid-2 portfolio-overview" });
+    const summary = el("div", { class: "card portfolio-summary" }, [
+      el("div", { class: "card-title" }, ["Профессиональный профиль"]),
+      el("p", {}, [portfolio.summary]),
+      el("div", { class: "portfolio-tags" }, [
+        ...portfolio.strengths.map((item) => el("span", { class: "badge badge-green" }, ["Сильная сторона · " + item])),
+        ...portfolio.growthAreas.map((item) => el("span", { class: "badge badge-yellow" }, ["Точка роста · " + item])),
+      ]),
+    ]);
+    const scores = el("div", { class: "card" }, [el("div", { class: "card-title" }, ["Профиль компетенций"])]);
+    portfolio.scores.forEach((score) => scores.appendChild(miniScoreRow(score, score.value)));
+    overview.appendChild(summary); overview.appendChild(scores); main.appendChild(overview);
+
+    const evidence = el("div", { class: "portfolio-section" }, [el("div", { class: "section-inline-head" }, [el("div", {}, [el("h3", {}, ["Подтверждённые достижения"]), el("p", {}, ["Добавляйте сертификаты, разработки, публикации и результаты учеников."])])])]);
+    if (!portfolio.evidence.items.length) evidence.appendChild(emptyState("📁", "Пока пусто", "Добавьте первое достижение — оно войдёт в PDF."));
+    portfolio.evidence.items.forEach((item) => {
+      const row = el("article", { class: "portfolio-item" }, [
+        el("div", { class: "portfolio-item-mark" }, [item.category === "publication" ? "П" : item.category === "certificate" ? "С" : item.category === "project" ? "ПР" : "Д"]),
+        el("div", { class: "portfolio-item-body" }, [el("span", { class: "portfolio-item-meta" }, [(item.date ? new Date(item.date).toLocaleDateString("ru-RU") : "Без даты") + " · " + portfolioCategory(item.category)]), el("h4", {}, [item.title]), el("p", {}, [item.description || "Без описания"])]),
+      ]);
+      if (item.url) row.querySelector(".portfolio-item-body").appendChild(el("a", { href: item.url, target: "_blank", rel: "noopener", class: "text-link" }, ["Открыть материал ↗"]));
+      const del = el("button", { class: "icon-btn", title: "Удалить", "aria-label": "Удалить достижение" }, ["×"]);
+      del.addEventListener("click", async () => { if (confirm("Удалить достижение из портфолио?")) { await API.deletePortfolioItem(item.id); renderMain(); } });
+      row.appendChild(del); evidence.appendChild(row);
+    });
+    main.appendChild(evidence);
+
+    const activity = el("div", { class: "grid-2 portfolio-activity" });
+    activity.appendChild(portfolioEvidenceCard("Завершённые мероприятия", portfolio.evidence.events.map((item) => ({ title: item.title, text: item.reflection || "Участие подтверждено", date: item.completed_at }))));
+    activity.appendChild(portfolioEvidenceCard("Отчёты и рефлексия", portfolio.evidence.reports.map((item) => ({ title: item.event_title, text: item.report_text, date: item.updated_at }))));
+    main.appendChild(activity);
+  }
+
+  function portfolioCategory(value) {
+    return ({ achievement: "Достижение", certificate: "Сертификат", publication: "Публикация", project: "Проект", method: "Методическая разработка" })[value] || "Материал";
+  }
+
+  function portfolioEvidenceCard(title, items) {
+    const card = el("div", { class: "card evidence-card" }, [el("div", { class: "card-title" }, [title])]);
+    if (!items.length) card.appendChild(el("p", { class: "muted" }, ["Данных пока нет."]));
+    items.slice(0, 8).forEach((item) => card.appendChild(el("div", { class: "evidence-row" }, [el("b", {}, [item.title]), el("p", {}, [item.text || "Подтверждено"]), el("span", {}, [formatDate(item.date)])])));
+    return card;
+  }
+
+  function openPortfolioItemModal() {
+    const backdrop = el("div", { class: "modal-backdrop" });
+    const card = el("div", { class: "modal-card" }, [el("h3", {}, ["Добавить достижение"])]);
+    const category = fieldSelect("Тип материала", [["achievement", "Достижение"], ["certificate", "Сертификат"], ["publication", "Публикация"], ["project", "Проект"], ["method", "Методическая разработка"]], "achievement");
+    const title = fieldInput("Название", "");
+    const description = fieldInput("Описание и результат", "", "textarea");
+    const date = fieldInput("Дата (ГГГГ-ММ-ДД)", "");
+    const url = fieldInput("Ссылка на подтверждение (необязательно)", "");
+    [category, title, description, date, url].forEach((field) => card.appendChild(field.wrap));
+    const buttons = el("div", { class: "modal-actions" });
+    const cancel = el("button", { class: "btn btn-secondary" }, ["Отмена"]);
+    const save = el("button", { class: "btn btn-primary" }, ["Добавить"]);
+    cancel.addEventListener("click", () => backdrop.remove());
+    save.addEventListener("click", async () => {
+      if (!title.input.value.trim()) { toast("Укажите название", true); return; }
+      try {
+        await API.addPortfolioItem({ category: category.input.value, title: title.input.value.trim(), description: description.input.value.trim(), date: date.input.value.trim() || null, url: url.input.value.trim() });
+        backdrop.remove(); renderMain(); toast("Достижение добавлено в портфолио");
+      } catch (e) { apiErr(e); }
+    });
+    buttons.appendChild(cancel); buttons.appendChild(save); card.appendChild(buttons); backdrop.appendChild(card);
+    backdrop.addEventListener("click", (event) => { if (event.target === backdrop) backdrop.remove(); });
+    document.body.appendChild(backdrop);
+  }
+
+  /* =========================== FILES =========================== */
+  async function renderFiles(main) {
+    topbar(main, "📎 Файлы", "Документы и материалы, отправленные в чатах");
+    const files = await API.listFiles();
+    if (!files.length) { main.appendChild(emptyState("📎", "Файлов пока нет", "Откройте чат с наставником или педагогом и прикрепите файл к сообщению.")); return; }
+    const list = el("div", { class: "file-list" });
+    files.forEach((file) => {
+      const row = el("div", { class: "file-row" }, [
+        el("div", { class: "file-kind" }, [file.type?.includes("pdf") ? "PDF" : file.type?.startsWith("image/") ? "IMG" : "DOC"]),
+        el("div", { class: "file-info" }, [el("b", {}, [file.name]), el("span", {}, [`${file.senderName} · ${formatFileSize(file.size)} · ${formatDate(file.createdAt)}`])]),
+      ]);
+      const download = el("button", { class: "btn btn-secondary btn-sm" }, ["Скачать"]);
+      download.addEventListener("click", () => API.downloadFile(file.id, file.name).catch(apiErr));
+      row.appendChild(download); list.appendChild(row);
+    });
+    main.appendChild(list);
+  }
+
+  /* =========================== REPORTS =========================== */
+  async function renderReports(main) {
+    const csv = el("button", { class: "btn btn-secondary btn-sm" }, ["⬇ CSV"]);
+    csv.addEventListener("click", () => API.downloadReportCsv().catch(apiErr));
+    topbar(main, "📊 Отчёты", "Актуальная сводка по данным платформы", [csv]);
+    const report = await API.getReport();
+    const colors = ["purple", "magenta", "yellow", "green", "purple", "magenta"];
+    const stats = el("div", { class: "grid-3 report-stats" });
+    report.stats.forEach((stat, index) => stats.appendChild(statTile(colors[index], stat.label, String(stat.value))));
+    main.appendChild(stats);
+    const detail = el("div", { class: "grid-2 report-detail" });
+    const comp = el("div", { class: "card" }, [el("div", { class: "card-title" }, ["Средний профиль компетенций"])]);
+    report.competencies.forEach((item) => comp.appendChild(miniScoreRow({ id: item.id, label: item.label, icon: API.competency(item.id)?.icon || "•" }, item.value)));
+    const note = el("div", { class: "report-note" }, [el("span", {}, ["Срез"]), el("b", {}, [formatDate(report.generatedAt)]), el("p", {}, [report.scope === "admin" ? "Сводка по всей платформе" : report.scope === "mentor" ? `В отчёте ${report.meta.trackedPeople} подопечных` : "Ваш индивидуальный отчёт"])]);
+    detail.appendChild(comp); detail.appendChild(note); main.appendChild(detail);
+    if (report.people.length) {
+      const table = el("div", { class: "data-table" }, [el("div", { class: "data-table-head" }, ["Педагог", "Предмет", "Регион", "Этап", "Балл"].map((value) => el("span", {}, [value])))]);
+      report.people.forEach((person) => table.appendChild(el("div", { class: "data-table-row" }, [
+        el("b", { "data-label": "Педагог" }, [person.name]), el("span", { "data-label": "Предмет" }, [person.subject]), el("span", { "data-label": "Регион" }, [person.region]), el("span", { "data-label": "Этап" }, [`${person.stage}/6`]), el("span", { "data-label": "Балл", class: "mono" }, [person.average ? `${person.average}/5` : "—"]),
+      ])));
+      main.appendChild(table);
+    }
+  }
+
+  /* =========================== NOTIFICATIONS =========================== */
+  async function renderNotifications(main) {
+    const markAll = el("button", { class: "btn btn-secondary btn-sm" }, ["Прочитать все"]);
+    markAll.addEventListener("click", async () => { await API.readAllNotifications(); lastUnreadCount = 0; renderMain(); });
+    const actions = [markAll];
+    if ("Notification" in window && Notification.permission !== "granted") {
+      const desktop = el("button", { class: "btn btn-primary btn-sm" }, ["Включить системные"]);
+      desktop.addEventListener("click", async () => { const result = await Notification.requestPermission(); toast(result === "granted" ? "Системные уведомления включены" : "Разрешение не выдано", result !== "granted"); });
+      actions.push(desktop);
+    }
+    topbar(main, "🔔 Уведомления", "Сообщения, задания, отчёты и видеовстречи", actions);
+    const data = await API.getNotifications();
+    lastUnreadCount = data.unread || 0;
+    if (!data.notifications.length) { main.appendChild(emptyState("🔔", "Всё спокойно", "Здесь появятся новые сообщения, задания и приглашения.")); return; }
+    const list = el("div", { class: "notification-list" });
+    data.notifications.forEach((notification) => {
+      const row = el("button", { class: "notification-row" + (notification.read ? "" : " unread") }, [
+        el("span", { class: "notification-icon" }, [({ message: "💬", file: "📎", video: "🎥", assignment: "📮", report: "📝", mentor: "🤝" })[notification.type] || "🔔"]),
+        el("span", { class: "notification-copy" }, [el("b", {}, [notification.title]), el("span", {}, [notification.body]), el("small", {}, [formatDate(notification.createdAt)])]),
+        el("span", { class: "notification-arrow" }, ["→"]),
+      ]);
+      row.addEventListener("click", async () => {
+        if (!notification.read) await API.readNotification(notification.id);
+        if (notification.link?.startsWith("#/")) {
+          const parts = notification.link.slice(2).split("/");
+          go(parts[0], parts[1]);
+        } else renderMain();
+      });
+      list.appendChild(row);
+    });
+    main.appendChild(list);
+  }
+
+  function formatDate(value) {
+    if (!value) return "—";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" });
+  }
+
   /* =========================== PROFILE =========================== */
   async function renderProfile(main, user) {
     topbar(main, "⚙️ Профиль");
@@ -1623,14 +1963,14 @@
     main.appendChild(statusCard);
 
     if (user.role === "user" && API.hasScores(user)) {
-      const pCard = el("div", { class: "card", style: "margin-top:18px;" }, [el("div", { class: "card-title" }, ["🎓 Цифровое портфолио (этап 6)"])]);
-      const pText = el("p", { style: "font-size:13.5px; color:var(--ink-soft); white-space:pre-line; margin-bottom:10px;" }, ["Загружаю…"]);
-      pCard.appendChild(pText);
-      const refreshBtn = el("button", { class: "btn btn-ghost btn-sm" }, ["🔄 Пересобрать"]);
-      refreshBtn.addEventListener("click", async () => { pText.textContent = "Загружаю…"; const p = await API.getPortfolio(true); pText.textContent = p.text; });
-      pCard.appendChild(refreshBtn);
+      const pCard = el("div", { class: "card", style: "margin-top:18px;" }, [
+        el("div", { class: "card-title" }, ["🎓 Профессиональное портфолио"]),
+        el("p", { style: "font-size:13.5px; color:var(--ink-soft); margin-bottom:12px;" }, ["Расширенный профиль, достижения, мероприятия, отчёты и экспорт готового документа в PDF."]),
+      ]);
+      const openBtn = el("button", { class: "btn btn-primary btn-sm" }, ["Открыть портфолио"]);
+      openBtn.addEventListener("click", () => go("portfolio"));
+      pCard.appendChild(openBtn);
       main.appendChild(pCard);
-      API.getPortfolio().then(p => { pText.textContent = p.text; }).catch(() => { pText.textContent = "Не удалось собрать портфолио."; });
     }
   }
 

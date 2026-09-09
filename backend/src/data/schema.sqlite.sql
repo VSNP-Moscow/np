@@ -116,6 +116,29 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS idx_messages_pair ON messages(from_user_id, to_user_id);
 
+CREATE TABLE IF NOT EXISTS message_attachments (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  file_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  data_base64 TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_message_attachments_message ON message_attachments(message_id);
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL DEFAULT 'info',
+  title TEXT NOT NULL,
+  body TEXT DEFAULT '',
+  link TEXT,
+  read_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at);
+
 CREATE TABLE IF NOT EXISTS ai_chats (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -175,6 +198,18 @@ CREATE TABLE IF NOT EXISTS portfolios (
   text TEXT NOT NULL,
   generated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS portfolio_items (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  category TEXT NOT NULL DEFAULT 'achievement',
+  title TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  item_date TEXT,
+  url TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_items_user ON portfolio_items(user_id, created_at);
 
 CREATE TABLE IF NOT EXISTS groups (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),

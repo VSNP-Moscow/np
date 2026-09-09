@@ -2,11 +2,14 @@ import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { query } from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
-import { startDiagnostic, handleDiagnosticReply, isDiagnosticActive, assistantReply, QUICK_ACTIONS, quickActionText } from "../services/mentor.js";
+import { startDiagnostic, handleDiagnosticReply, isDiagnosticActive, getDiagnosticProgress, assistantReply, QUICK_ACTIONS, quickActionText } from "../services/mentor.js";
 import { generateRoadmap, getStoredRoadmap, addProgressItem, listProgress, reportProgress, mentorRateProgress } from "../services/roadmap.js";
 import { hasApiKey, aiProviderInfo } from "../services/gemini.js";
-import { getOrGenerateDigest, reviewReportDraft, getOrGenerateMethodicalTips, getOrGeneratePortfolio, getInactivityNudge } from "../services/aiFeatures.js";
+import { getOrGenerateDigest, reviewReportDraft, getOrGenerateMethodicalTips, getInactivityNudge } from "../services/aiFeatures.js";
 import { awardCoins, REWARDS } from "../services/gamification.js";
+import { createNotification } from "../services/notifications.js";
+import { buildPortfolioData } from "../services/portfolio.js";
+import { createPortfolioPdf } from "../services/portfolioPdf.js";
 
 const router = Router();
 
@@ -32,13 +35,13 @@ router.get("/status", requireAuth, (req, res) => {
 
 router.get("/chat", requireAuth, async (req, res) => {
   const { rows } = await query("SELECT * FROM ai_chats WHERE user_id = $1 ORDER BY id ASC", [req.user.id]);
-  res.json({ messages: rows.map(mapChatRow), diagnosticActive: await isDiagnosticActive(req.user.id) });
+  res.json({ messages: rows.map(mapChatRow), diagnosticActive: await isDiagnosticActive(req.user.id), diagnosticProgress: await getDiagnosticProgress(req.user.id) });
 });
 
 router.post("/diagnostic/start", requireAuth, async (req, res) => {
   const msgs = await startDiagnostic(req.user);
   for (const m of msgs) await saveChatRow(req.user.id, m);
-  res.json({ messages: msgs });
+  res.json({ messages: msgs, diagnosticProgress: await getDiagnosticProgress(req.user.id) });
 });
 
 router.post("/diagnostic/reply", requireAuth, async (req, res) => {
@@ -47,7 +50,7 @@ router.post("/diagnostic/reply", requireAuth, async (req, res) => {
   await saveChatRow(req.user.id, { role: "user", text });
   const newMsgs = await handleDiagnosticReply(req.user, text);
   for (const m of newMsgs) await saveChatRow(req.user.id, m);
-  res.json({ messages: newMsgs, diagnosticActive: await isDiagnosticActive(req.user.id) });
+  res.json({ messages: newMsgs, diagnosticActive: await isDiagnosticActive(req.user.id), diagnosticProgress: await getDiagnosticProgress(req.user.id) });
 });
 
 router.post("/chat", requireAuth, async (req, res) => {
@@ -104,6 +107,9 @@ router.post("/roadmap/progress/:id/report", requireAuth, async (req, res) => {
   const item = await reportProgress(req.params.id, req.user.id, reportText, rating);
   if (!item) return res.status(404).json({ error: "Не найдено" });
   await awardCoins(req.user.id, REWARDS.ROADMAP_PROGRESS_REPORTED, "Отчёт по мероприятию сдан");
+  if (req.user.mentorId) {
+    await createNotification(req.user.mentorId, "report", "Новый отчёт на проверку", `${req.user.fullName}: ${item.event_title}`, `#/mentees/${req.user.id}`);
+  }
   res.json({ progress: item });
 });
 
@@ -128,8 +134,6 @@ router.get("/roadmap/progress/mentees", requireAuth, requireRole("mentor"), asyn
   res.json({ progress: rows });
 });
 
-export default router;
-
 // ==================== 5 новых ИИ-функций ====================
 
 // 1) Ежедневный дайджест "что дальше" на дашборде (кэш 24ч).
@@ -150,13 +154,54 @@ router.get("/tips/:competencyId", requireAuth, async (req, res) => {
   res.json(tips);
 });
 
-// 4) Автосборка цифрового портфолио (этап 6 алгоритма).
+router.get("/portfolio/items", requireAuth, async (req, res) => {
+  const { rows } = await query("SELECT * FROM portfolio_items WHERE user_id = $1 ORDER BY created_at DESC", [req.user.id]);
+  res.json({ items: rows });
+});
+
+router.post("/portfolio/items", requireAuth, async (req, res) => {
+  const title = String(req.body?.title || "").trim();
+  const description = String(req.body?.description || "").trim();
+  const category = String(req.body?.category || "achievement").trim().slice(0, 40);
+  const itemDate = req.body?.date || null;
+  const rawUrl = String(req.body?.url || "").trim();
+  const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : null;
+  if (rawUrl && !url) return res.status(400).json({ error: "Ссылка должна начинаться с http:// или https://" });
+  if (!title) return res.status(400).json({ error: "Укажите название достижения" });
+  const { rows } = await query(
+    `INSERT INTO portfolio_items (user_id, category, title, description, item_date, url)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+    [req.user.id, category, title.slice(0, 180), description.slice(0, 3000), itemDate, url]
+  );
+  res.json({ item: rows[0] });
+});
+
+router.delete("/portfolio/items/:id", requireAuth, async (req, res) => {
+  const result = await query("DELETE FROM portfolio_items WHERE id = $1 AND user_id = $2", [req.params.id, req.user.id]);
+  if (!result.rowCount) return res.status(404).json({ error: "Материал не найден" });
+  res.json({ ok: true });
+});
+
+router.get("/portfolio/pdf", requireAuth, async (req, res) => {
+  if (req.user.role !== "user") return res.status(403).json({ error: "Портфолио доступно молодому педагогу" });
+  const portfolio = await buildPortfolioData(req.user, req.query.force === "1");
+  const pdf = await createPortfolioPdf(portfolio);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Length", String(pdf.length));
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("Content-Disposition", `attachment; filename=portfolio.pdf; filename*=UTF-8''${encodeURIComponent(`Портфолио_${req.user.fullName}.pdf`)}`);
+  res.send(pdf);
+});
+
+// 4) Автосборка расширенного цифрового портфолио (этап 6 алгоритма).
 router.get("/portfolio", requireAuth, async (req, res) => {
-  const text = await getOrGeneratePortfolio(req.user, req.query.force === "1");
-  res.json({ text });
+  if (req.user.role !== "user") return res.status(403).json({ error: "Портфолио доступно молодому педагогу" });
+  res.json(await buildPortfolioData(req.user, req.query.force === "1"));
 });
 
 // 5) Умное напоминание о неактивности.
 router.get("/nudge", requireAuth, async (req, res) => {
   res.json(await getInactivityNudge(req.user.id));
 });
+
+export default router;

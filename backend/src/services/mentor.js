@@ -3,21 +3,33 @@ import { callGemini, hasApiKey } from "./gemini.js";
 import { awardCoins, REWARDS } from "./gamification.js";
 
 const SCORE_CHIPS = [
-  { v: 1, t: "Совсем не уверен(а), нужна помощь с нуля" },
-  { v: 2, t: "Есть большие трудности" },
-  { v: 3, t: "Средне — получается, но нестабильно" },
-  { v: 4, t: "Уверенно, но есть куда расти" },
-  { v: 5, t: "Это моя сильная сторона" },
+  { v: 1, t: "1 · Нужна помощь с нуля" },
+  { v: 2, t: "2 · Пока есть трудности" },
+  { v: 3, t: "3 · Получается нестабильно" },
+  { v: 4, t: "4 · Получается уверенно" },
+  { v: 5, t: "5 · Это моя сильная сторона" },
 ];
 
-const QUESTIONS = {
-  subject: "Начнём с предмета. Насколько уверенно вы чувствуете себя в своём предмете и его научной базе — легко ли отвечаете на неожиданные вопросы учеников?",
-  pedagogy: "Как обстоят дела с управлением классом? Получается удерживать внимание и дисциплину на протяжении всего урока?",
-  method: "Теперь про методику. Насколько легко вам планировать уроки и разрабатывать рабочую программу?",
-  digital: "А как с цифровыми инструментами — МЭШ, ЭОР, интерактивные задания?",
-  communication: "Расскажите про коммуникацию: как складывается общение с родителями, коллегами, администрацией?",
-  personal: "И последнее — про личный бренд. Участвуете ли в конкурсах, сообществах?",
-};
+const DIALOG_ITEMS = [
+  { id: "subject", key: "subject_science", text: "Ученик задаёт неожиданный вопрос за пределами учебника. Насколько уверенно вы объясните научную основу темы и свяжете её с программой?" },
+  { id: "subject", key: "subject_gaps", text: "По итогам контрольной треть класса не усвоила тему. Насколько уверенно вы определите причины ошибок и перестроите объяснение?" },
+  { id: "subject", key: "subject_links", text: "Нужно показать связь вашей темы с другими предметами и жизненной практикой. Насколько легко вы подберёте точные примеры?" },
+  { id: "pedagogy", key: "pedagogy_climate", text: "В классе растёт шум, несколько учеников выпадают из работы. Насколько уверенно вы вернёте внимание без конфликта?" },
+  { id: "pedagogy", key: "pedagogy_motivation", text: "В одном классе есть сильные, тревожные и слабо мотивированные ученики. Насколько уверенно вы организуете работу для всех?" },
+  { id: "pedagogy", key: "pedagogy_age", text: "Насколько системно вы учитываете возрастные и индивидуальные особенности учеников при выборе заданий и темпа урока?" },
+  { id: "method", key: "method_program", text: "Нужно самостоятельно собрать рабочую программу по актуальному ФГОС. Насколько уверенно вы справитесь с результатами, содержанием и тематическим планированием?" },
+  { id: "method", key: "method_lesson", text: "Насколько уверенно вы формулируете цель урока, подбираете задания разной сложности и связываете этапы в единую логику?" },
+  { id: "method", key: "method_reflection", text: "После неудачного урока насколько точно вы можете провести самоанализ и назвать конкретное изменение для следующего занятия?" },
+  { id: "digital", key: "digital_resources", text: "Нужно быстро найти качественный ЭОР или материал МЭШ. Насколько уверенно вы оцените его достоверность и методическую ценность?" },
+  { id: "digital", key: "digital_interactive", text: "Насколько уверенно вы создадите интерактивное задание, которое помогает достичь цели урока, а не просто развлекает?" },
+  { id: "digital", key: "digital_data", text: "Насколько уверенно вы работаете с электронным журналом, цифровой отчётностью и защитой персональных данных учеников?" },
+  { id: "communication", key: "communication_parent", text: "Родитель резко не согласен с оценкой ребёнка. Насколько уверенно вы проведёте разговор и зафиксируете совместный план действий?" },
+  { id: "communication", key: "communication_conflict", text: "Возник конфликт между учениками или коллегами. Насколько уверенно вы отделите факты от эмоций и поможете договориться?" },
+  { id: "communication", key: "communication_team", text: "Насколько свободно вы обсуждаете сложный случай с наставником, психологом и администрацией и принимаете профессиональную обратную связь?" },
+  { id: "personal", key: "personal_reflection", text: "Насколько регулярно вы оцениваете собственный прогресс и превращаете наблюдения в конкретный план развития?" },
+  { id: "personal", key: "personal_community", text: "Насколько активно вы участвуете в педагогических сообществах, мастер-классах, конкурсах или обмене практиками?" },
+  { id: "personal", key: "personal_portfolio", text: "Насколько системно вы собираете подтверждения результатов: разработки, отзывы, сертификаты, рефлексии и достижения учеников?" },
+];
 
 const FOLLOWUP_LOW = {
   subject: "Понимаю. Что именно вызывает больше всего сомнений — конкретные темы, или уверенность отвечать «на лету»?",
@@ -46,10 +58,29 @@ function inferScore(text) {
   NEG_WORDS.forEach((w) => { if (t.includes(w)) s -= 1; });
   return Math.max(1, Math.min(5, s));
 }
+async function inferScoreWithAi(question, answer) {
+  if (!hasApiKey()) return inferScore(answer);
+  try {
+    const { text } = await callGemini({
+      system: "Ты оцениваешь самоописание профессиональной компетенции педагога. Верни только одно целое число от 1 до 5: 1 — выраженные трудности, 3 — нестабильное владение, 5 — уверенное владение с конкретными доказательствами.",
+      messages: [{ role: "user", content: `Ситуация: ${question}\nОтвет педагога: ${answer}` }],
+      maxTokens: 20,
+    });
+    const score = Number(String(text).match(/[1-5]/)?.[0]);
+    return score >= 1 && score <= 5 ? score : inferScore(answer);
+  } catch (error) {
+    console.error("[inferScoreWithAi] failed:", error.message || error);
+    return inferScore(answer);
+  }
+}
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function firstName(u) { return (u.fullName || "коллега").split(" ")[0]; }
 function compOrder() { return COMPETENCIES.map((c) => c.id); }
-function questionFor(idx) { const id = compOrder()[idx]; return { id, comp: COMPETENCIES.find((c) => c.id === id), text: QUESTIONS[id] }; }
+function questionFor(idx) {
+  const item = DIALOG_ITEMS[idx];
+  if (!item) return null;
+  return { ...item, comp: COMPETENCIES.find((competency) => competency.id === item.id) };
+}
 
 const DEFAULT_PROFILE = () => ({ stepIndex: 0, awaitingFollowup: false, answers: {}, notes: {}, done: false });
 
@@ -72,14 +103,30 @@ export async function startDiagnostic(user) {
   await query("DELETE FROM ai_chats WHERE user_id = $1", [user.id]); // начинаем диагностику заново — старую историю чата с ИИ очищаем
   const q = questionFor(0);
   return [
-    { role: "ai", text: `Привет, ${firstName(user)}! Я ваш ИИ-наставник 🤖 Вместо теста — просто поговорим. Пройдёмся по 6 направлениям, а в конце я найду для вас реальные мероприятия в регионе «${user.region || "не указан"}» и соберу дорожную карту.` },
-    { role: "ai", text: `${q.comp.icon} **${q.comp.label}**\n${q.text}`, chips: SCORE_CHIPS.map((c) => c.t) },
+    { role: "ai", text: `Привет, ${firstName(user)}! Проведём профессиональную диагностику в формате диалога: **18 рабочих ситуаций по 6 компетенциям**. Это займёт 7–10 минут. Можно выбрать оценку или ответить своими словами — я учту контекст и уточню важные трудности.` },
+    { role: "ai", text: `**Вопрос 1 из ${DIALOG_ITEMS.length}**\n${q.comp.icon} **${q.comp.label}**\n${q.text}`, chips: SCORE_CHIPS.map((c) => c.t) },
   ];
 }
 
 export async function isDiagnosticActive(userId) {
-  const p = await loadProfile(userId);
-  return Boolean(p && !p.done);
+  const { rows } = await query("SELECT done FROM ai_profiles WHERE user_id = $1", [userId]);
+  return Boolean(rows[0] && !rows[0].done);
+}
+
+export async function getDiagnosticProgress(userId) {
+  const { rows } = await query("SELECT step_index, awaiting_followup, done FROM ai_profiles WHERE user_id = $1", [userId]);
+  if (!rows[0]) return { started: false, done: false, current: 0, total: DIALOG_ITEMS.length, percent: 0 };
+  const current = rows[0].done ? DIALOG_ITEMS.length : Math.min(Number(rows[0].step_index || 0), DIALOG_ITEMS.length - 1);
+  const question = questionFor(current);
+  return {
+    started: true,
+    done: Boolean(rows[0].done),
+    current: rows[0].done ? DIALOG_ITEMS.length : current + 1,
+    total: DIALOG_ITEMS.length,
+    percent: rows[0].done ? 100 : Math.round((current / DIALOG_ITEMS.length) * 100),
+    competency: question?.id || null,
+    awaitingFollowup: Boolean(rows[0].awaiting_followup),
+  };
 }
 
 export async function handleDiagnosticReply(user, input) {
@@ -89,7 +136,7 @@ export async function handleDiagnosticReply(user, input) {
   const q = questionFor(idx);
 
   if (state.awaitingFollowup) {
-    state.notes[q.id] = input;
+    state.notes[q.key] = input;
     state.awaitingFollowup = false;
     out.push({ role: "ai", text: pick(["Записал, это поможет точнее подобрать мероприятия.", "Спасибо, учту это в карте."]) });
     await advance(state, out, user);
@@ -98,8 +145,8 @@ export async function handleDiagnosticReply(user, input) {
   }
 
   const chipMatch = SCORE_CHIPS.find((c) => c.t === input);
-  const score = chipMatch ? chipMatch.v : inferScore(input);
-  state.answers[q.id] = score;
+  const score = chipMatch ? chipMatch.v : await inferScoreWithAi(q.text, input);
+  state.answers[q.key] = score;
   out.push({ role: "ai", text: pick(MICRO_FEEDBACK[score]) });
 
   if (score <= 2 && chipMatch) {
@@ -114,18 +161,22 @@ export async function handleDiagnosticReply(user, input) {
 
 async function advance(state, out, user) {
   state.stepIndex += 1;
-  if (state.stepIndex >= compOrder().length) {
+  if (state.stepIndex >= DIALOG_ITEMS.length) {
     state.done = true;
     const scores = {};
-    compOrder().forEach((id) => { scores[id] = state.answers[id] || 3; });
+    compOrder().forEach((id) => {
+      const values = DIALOG_ITEMS.filter((item) => item.id === id).map((item) => Number(state.answers[item.key] || 3));
+      scores[id] = Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10;
+    });
     await query("UPDATE users SET scores = $1, current_stage = GREATEST(current_stage, 2) WHERE id = $2", [JSON.stringify(scores), user.id]);
     await awardCoins(user.id, REWARDS.DIAGNOSTIC_DONE, "Диагностика пройдена");
-    const weak = COMPETENCIES.filter((c) => scores[c.id] <= 2).map((c) => `${c.icon} ${c.label} (${scores[c.id]}/5)`).join(", ") || "выраженных дефицитов не выявлено";
-    out.push({ role: "ai", text: `Готово! 🎉 Средний балл: **${(Object.values(scores).reduce((a, b) => a + b, 0) / 6).toFixed(1)}/5**\nПриоритеты: ${weak}` });
+    const weak = COMPETENCIES.filter((c) => scores[c.id] <= 2.8).map((c) => `${c.icon} ${c.label} (${scores[c.id]}/5)`).join(", ") || "выраженных дефицитов не выявлено";
+    const strong = COMPETENCIES.filter((c) => scores[c.id] >= 4).map((c) => `${c.icon} ${c.label} (${scores[c.id]}/5)`).join(", ") || "профиль пока ровный — сильные стороны проявятся в практике";
+    out.push({ role: "ai", text: `**Диагностика завершена**\nСредний балл: **${(Object.values(scores).reduce((a, b) => a + b, 0) / 6).toFixed(1)}/5**\n\n**Сильные стороны:** ${strong}\n**Приоритеты развития:** ${weak}` });
     out.push({ role: "ai", text: `Сейчас поищу для вас реальные мероприятия в регионе «${user.region || "не указан"}» и соберу дорожную карту — откройте вкладку «Дорожная карта».`, action: "generate-roadmap" });
   } else {
     const q = questionFor(state.stepIndex);
-    out.push({ role: "ai", text: `${q.comp.icon} **${q.comp.label}**\n${q.text}`, chips: SCORE_CHIPS.map((c) => c.t) });
+    out.push({ role: "ai", text: `**Вопрос ${state.stepIndex + 1} из ${DIALOG_ITEMS.length}**\n${q.comp.icon} **${q.comp.label}**\n${q.text}`, chips: SCORE_CHIPS.map((c) => c.t) });
   }
 }
 

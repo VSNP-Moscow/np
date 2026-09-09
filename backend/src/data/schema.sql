@@ -117,7 +117,7 @@ CREATE TABLE IF NOT EXISTS notes (
 );
 CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id);
 
--- Чат наставник—наставляемый (текстовый; видео-звонки не входят в бесплатный MVP — см. README).
+-- Серверный чат наставник-наставляемый. Видеовстречи используют защищённую комнату пары.
 CREATE TABLE IF NOT EXISTS messages (
   id BIGSERIAL PRIMARY KEY,
   from_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -127,6 +127,29 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_messages_pair ON messages(from_user_id, to_user_id);
+
+CREATE TABLE IF NOT EXISTS message_attachments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id BIGINT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  file_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  data_base64 TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_message_attachments_message ON message_attachments(message_id);
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL DEFAULT 'info',
+  title TEXT NOT NULL,
+  body TEXT DEFAULT '',
+  link TEXT,
+  read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC);
 
 -- Переписка с цифровым ИИ-наставником (отдельно от чата с человеком-наставником).
 CREATE TABLE IF NOT EXISTS ai_chats (
@@ -201,6 +224,18 @@ CREATE TABLE IF NOT EXISTS portfolios (
   text TEXT NOT NULL,
   generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS portfolio_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  category TEXT NOT NULL DEFAULT 'achievement',
+  title TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  item_date DATE,
+  url TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_items_user ON portfolio_items(user_id, created_at DESC);
 
 -- 5) Умные напоминания о неактивности — не требуют своей таблицы, считаются "на лету"
 -- по MAX(created_at) в ai_chats/roadmap_progress/event_completions (см. routes/ai.js).

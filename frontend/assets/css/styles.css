@@ -783,7 +783,8 @@ h1, h2, h3, h4 { letter-spacing: 0; }
   .peer-chat-bar { display: grid; grid-template-columns: 42px minmax(0,1fr); }
   .peer-chat-bar .btn { grid-column: 1 / -1; width: 100%; }
   .portfolio-cover { min-height: 260px; padding: 24px; align-items: flex-start; flex-direction: column; }
-  .portfolio-cover h2 { font-size: 34px; }
+  .portfolio-cover-copy { width: 100%; min-width: 0; }
+  .portfolio-cover h2 { font-size: 34px; overflow-wrap: anywhere; }
   .portfolio-stage { width: 76px; height: 76px; align-self: flex-end; }
   .portfolio-overview, .portfolio-activity { grid-template-columns: 1fr; }
   .portfolio-item { grid-template-columns: 42px minmax(0,1fr) 38px; gap: 10px; padding: 13px; }
@@ -797,4 +798,8 @@ h1, h2, h3, h4 { letter-spacing: 0; }
   .notification-row { padding: 14px 12px; grid-template-columns: 38px minmax(0,1fr) 18px; gap: 10px; }
   .topbar-actions { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); }
   .topbar-actions .btn { width: 100%; padding-left: 10px; padding-right: 10px; }
+}
+
+@media (max-width: 380px) {
+  .portfolio-cover h2 { font-size: 30px; }
 }

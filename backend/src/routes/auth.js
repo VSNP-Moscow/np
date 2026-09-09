@@ -28,6 +28,7 @@ router.post("/register", async (req, res) => {
     [fullName, email, passwordHash, finalRole, subject || "", school || "", region || "", parseInt(yearsExperience, 10) || 0, JSON.stringify(scores), avatarColor]
   );
   const user = rows[0];
+  res.locals.auditUserId = user.id;
   res.json({ token: signToken(user.id), user: mapUser(user) });
 });
 
@@ -38,6 +39,7 @@ router.post("/login", async (req, res) => {
   if (!user) return res.status(401).json({ error: "Неверная почта или пароль" });
   const ok = await bcrypt.compare(password || "", user.password_hash);
   if (!ok) return res.status(401).json({ error: "Неверная почта или пароль" });
+  res.locals.auditUserId = user.id;
   res.json({ token: signToken(user.id), user: mapUser(user) });
 });
 

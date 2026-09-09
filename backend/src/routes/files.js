@@ -44,7 +44,11 @@ router.get("/:id", requireAuth, async (req, res) => {
   res.setHeader("Content-Type", file.mime_type || "application/octet-stream");
   res.setHeader("Content-Length", String(file.size_bytes));
   res.setHeader("Content-Disposition", `attachment; filename="download"; filename*=UTF-8''${encodeURIComponent(safeName)}`);
-  res.send(Buffer.from(file.data_base64, "base64"));
+  const data = file.data_bytes
+    ? Buffer.from(file.data_bytes)
+    : Buffer.from(file.data_base64 || "", "base64");
+  if (!data.length) return res.status(410).json({ error: "Содержимое файла недоступно" });
+  res.send(data);
 });
 
 export default router;

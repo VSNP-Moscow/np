@@ -23,6 +23,9 @@ import assignmentRoutes from "./routes/assignments.js";
 import notificationRoutes from "./routes/notifications.js";
 import fileRoutes from "./routes/files.js";
 import reportRoutes from "./routes/reports.js";
+import activityRoutes from "./routes/activity.js";
+import { query } from "./db.js";
+import crypto from "node:crypto";
 
 await initSchema();
 await seedIfEmpty();
@@ -37,6 +40,23 @@ app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "same-origin");
   res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  next();
+});
+
+// Persist an audit trail for every state-changing authenticated request.
+// Only metadata is stored; request bodies can contain private chat/file data.
+app.use((req, res, next) => {
+  if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method) || req.path.startsWith("/api/cron/")) return next();
+  res.on("finish", () => {
+    const actorId = req.user?.id || res.locals.auditUserId;
+    if (!actorId) return;
+    const ip = req.ip || req.socket?.remoteAddress || "";
+    const ipHash = crypto.createHash("sha256").update(`${process.env.JWT_SECRET || "navigator"}:${ip}`).digest("hex").slice(0, 24);
+    query(
+      "INSERT INTO activity_log (user_id, method, path, status_code, ip_hash, user_agent) VALUES ($1,$2,$3,$4,$5,$6)",
+      [actorId, req.method, req.path.slice(0, 300), res.statusCode, ipHash, String(req.headers["user-agent"] || "").slice(0, 300)]
+    ).catch((error) => console.error("activity_log:", error.message));
+  });
   next();
 });
 
@@ -61,6 +81,7 @@ app.use("/api/assignments", assignmentRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/files", fileRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/activity", activityRoutes);
 
 // При обычном запуске один Node-процесс раздаёт и API, и фронтенд.
 // Это позволяет опубликовать сервис одной бесплатной публичной ссылкой.

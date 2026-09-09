@@ -1162,13 +1162,47 @@
       el("div", {}, [el("div", { class: "card-title" }, ["💬 Чат с " + otherUser.fullName.split(" ")[0]]), el("div", { class: "chat-live-status" }, ["● Обновляется автоматически"])]),
     ]);
     const video = el("button", { class: "btn btn-secondary btn-sm", title: "Начать видеовстречу" }, ["🎥 Видеовстреча"]);
-    video.addEventListener("click", async () => {
-      const callWindow = window.open("about:blank", "_blank");
-      try {
-        const data = await API.startVideoCall(otherUser.id);
-        if (callWindow) callWindow.location.href = data.room; else window.open(data.room, "_blank", "noopener");
-        toast("Приглашение на видеовстречу отправлено");
-      } catch (e) { if (callWindow) callWindow.close(); apiErr(e); }
+    video.addEventListener("click", () => {
+      const backdrop = el("div", { class: "modal-backdrop" });
+      const dialog = el("div", { class: "modal-card video-provider-dialog" }, [
+        el("div", { class: "video-dialog-icon" }, ["🎥"]),
+        el("h3", {}, ["Начать видеовстречу"]),
+        el("p", { class: "muted" }, ["Основной вариант работает в России. Резервный канал создаёт готовую общую комнату автоматически."]),
+      ]);
+      const options = el("div", { class: "video-options" });
+      const telemost = el("button", { class: "video-option primary" }, [
+        el("b", {}, ["Яндекс Телемост"]),
+        el("span", {}, ["Откроется сервис Яндекса. Создайте встречу и отправьте полученную ссылку в чат."]),
+        el("small", {}, ["Основной · доступен в РФ"]),
+      ]);
+      const jitsi = el("button", { class: "video-option" }, [
+        el("b", {}, ["Резервная комната"]),
+        el("span", {}, ["Ссылка появится в чате автоматически. Используется Jitsi Meet."]),
+        el("small", {}, ["Без регистрации"]),
+      ]);
+      const launch = async (provider) => {
+        const callWindow = window.open("about:blank", "_blank");
+        try {
+          const data = await API.startVideoCall(otherUser.id, provider);
+          if (callWindow) callWindow.location.href = data.launchUrl; else window.open(data.launchUrl, "_blank", "noopener");
+          backdrop.remove();
+          if (provider === "telemost") {
+            input.value = "Ссылка на встречу: ";
+            input.focus();
+            toast("Вставьте ссылку Телемоста в сообщение и отправьте её");
+          } else {
+            renderMessages(await API.listMessages(otherUser.id));
+            toast("Ссылка на резервную комнату отправлена в чат");
+          }
+        } catch (e) { if (callWindow) callWindow.close(); apiErr(e); }
+      };
+      telemost.addEventListener("click", () => launch("telemost"));
+      jitsi.addEventListener("click", () => launch("jitsi"));
+      options.appendChild(telemost); options.appendChild(jitsi); dialog.appendChild(options);
+      const cancel = el("button", { class: "btn btn-ghost btn-block" }, ["Отмена"]);
+      cancel.addEventListener("click", () => backdrop.remove()); dialog.appendChild(cancel);
+      backdrop.appendChild(dialog); backdrop.addEventListener("click", (event) => { if (event.target === backdrop) backdrop.remove(); });
+      document.body.appendChild(backdrop);
     });
     head.appendChild(video);
     card.appendChild(head);

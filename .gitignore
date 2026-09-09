@@ -2,6 +2,10 @@ backend/.env
 backend/node_modules/
 backend/src/data/*.sqlite
 backend/src/data/*.sqlite-*
+backend/data/*.sqlite
+backend/data/*.sqlite-*
+backend/test-artifacts/
+backend/test-results/
 node_modules/
 .vercel/
 output/

@@ -134,10 +134,26 @@ CREATE TABLE IF NOT EXISTS message_attachments (
   file_name TEXT NOT NULL,
   mime_type TEXT NOT NULL,
   size_bytes INTEGER NOT NULL,
-  data_base64 TEXT NOT NULL,
+  data_bytes BYTEA,
+  data_base64 TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_message_attachments_message ON message_attachments(message_id);
+
+-- Аудит пользовательских изменений. Тела запросов намеренно не сохраняются:
+-- журнал фиксирует действие и результат, не дублируя сообщения и документы.
+CREATE TABLE IF NOT EXISTS activity_log (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  method TEXT NOT NULL,
+  path TEXT NOT NULL,
+  status_code SMALLINT NOT NULL,
+  ip_hash TEXT,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_activity_log_user ON activity_log(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at DESC);
 
 CREATE TABLE IF NOT EXISTS notifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -190,6 +190,18 @@ export async function initSchema() {
   const schema = fs.readFileSync(path.join(__dirname, "data", schemaName), "utf8");
   if (usePostgres) await pgPool.query(schema);
   else sqlite.exec(schema);
+
+  // Existing installations predate binary attachment storage. Keep the
+  // migration idempotent so every Render deploy can run it safely.
+  if (usePostgres) {
+    await pgPool.query("ALTER TABLE message_attachments ADD COLUMN IF NOT EXISTS data_bytes BYTEA");
+    await pgPool.query("ALTER TABLE message_attachments ALTER COLUMN data_base64 DROP NOT NULL");
+  } else {
+    const columns = sqlite.prepare("PRAGMA table_info(message_attachments)").all();
+    if (!columns.some((column) => column.name === "data_bytes")) {
+      sqlite.exec("ALTER TABLE message_attachments ADD COLUMN data_bytes BLOB");
+    }
+  }
 }
 
 export async function seedIfEmpty() {
@@ -244,3 +256,4 @@ export async function seedIfEmpty() {
 
 export function newId() { return crypto.randomUUID(); }
 export function databaseInfo() { return { driver: usePostgres ? "postgres" : "sqlite", path: usePostgres ? null : sqlitePath }; }
+export function isPostgres() { return usePostgres; }

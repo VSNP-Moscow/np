@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "test:ui": "playwright test tests/ui.spec.js --reporter=line"
   },
   "keywords": [],
   "author": "",
@@ -23,5 +24,8 @@
     "pg": "^8.22.0",
     "uuid": "^14.0.1"
   },
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
 }

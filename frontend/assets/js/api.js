@@ -144,7 +144,7 @@
     // ---- messages ----
     async listMessages(otherId) { const data = await request("GET", "/messages/" + otherId); return data.messages; },
     async sendMessage(otherId, text, attachment) { const data = await request("POST", "/messages/" + otherId, { text, attachment }); return data.message; },
-    async startVideoCall(otherId) { return request("POST", `/messages/${otherId}/video-call`); },
+    async startVideoCall(otherId, provider = "telemost") { return request("POST", `/messages/${otherId}/video-call`, { provider }); },
 
     // ---- files ----
     async listFiles() { const data = await request("GET", "/files"); return data.files; },

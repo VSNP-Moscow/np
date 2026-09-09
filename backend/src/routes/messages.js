@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { query, mapMessage } from "../db.js";
+import { query, mapMessage, isPostgres } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import crypto from "node:crypto";
 import { createNotification } from "../services/notifications.js";
@@ -59,7 +59,7 @@ router.post("/:otherId", requireAuth, async (req, res) => {
     const data = Buffer.from(raw, "base64");
     if (!name || !raw || !data.length) return res.status(400).json({ error: "Файл повреждён или пуст" });
     if (data.length > 5 * 1024 * 1024) return res.status(413).json({ error: "Максимальный размер файла — 5 МБ" });
-    file = { name, type, data, base64: raw };
+    file = { name, type, data };
   }
   const { rows } = await query(
     "INSERT INTO messages (from_user_id, to_user_id, text) VALUES ($1,$2,$3) RETURNING *",
@@ -68,9 +68,9 @@ router.post("/:otherId", requireAuth, async (req, res) => {
   const message = mapMessage(rows[0]);
   if (file) {
     const saved = await query(
-      `INSERT INTO message_attachments (message_id, file_name, mime_type, size_bytes, data_base64)
-       VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-      [message.id, file.name, file.type, file.data.length, file.base64]
+      `INSERT INTO message_attachments (message_id, file_name, mime_type, size_bytes, data_bytes, data_base64)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [message.id, file.name, file.type, file.data.length, isPostgres() ? file.data : new Uint8Array(file.data), isPostgres() ? null : ""]
     );
     message.attachment = { id: saved.rows[0].id, name: file.name, type: file.type, size: file.data.length };
   }
@@ -89,8 +89,16 @@ router.post("/:otherId/video-call", requireAuth, async (req, res) => {
   const pair = [req.user.id, req.params.otherId].sort().join(":");
   const roomCode = crypto.createHash("sha256").update(`${process.env.JWT_SECRET || "navigator"}:${pair}`).digest("hex").slice(0, 24);
   const room = `https://meet.jit.si/NavigatorPedagoga-${roomCode}`;
-  await createNotification(req.params.otherId, "video", "Приглашение на видеовстречу", `${req.user.fullName} приглашает вас подключиться к видеовстрече.`, req.user.role === "mentor" ? "#/mentor" : `#/mentees/${req.user.id}`);
-  res.json({ room });
+  const provider = req.body?.provider === "jitsi" ? "jitsi" : "telemost";
+  const launchUrl = provider === "telemost" ? "https://telemost.yandex.ru/" : room;
+  if (provider === "jitsi") {
+    await query(
+      "INSERT INTO messages (from_user_id, to_user_id, text) VALUES ($1,$2,$3)",
+      [req.user.id, req.params.otherId, `Видеовстреча: ${room}`]
+    );
+  }
+  await createNotification(req.params.otherId, "video", "Приглашение на видеовстречу", `${req.user.fullName} приглашает вас подключиться к видеовстрече (${provider === "telemost" ? "Яндекс Телемост" : "резервный канал"}).`, req.user.role === "mentor" ? "#/mentor" : `#/mentees/${req.user.id}`);
+  res.json({ provider, launchUrl, room, requiresLinkShare: provider === "telemost" });
 });
 
 export default router;

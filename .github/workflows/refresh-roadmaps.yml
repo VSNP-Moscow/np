@@ -1,0 +1,18 @@
+name: Обновление дорожных карт по регионам
+
+# Бесплатный планировщик: GitHub Actions запускает этот workflow по расписанию и дёргает
+# бэкенд по HTTPS. Это заменяет отдельный cron-сервер (который стоил бы денег) — и заодно
+# "будит" бесплатный Render-сервис, если он успел уснуть.
+on:
+  schedule:
+    - cron: "0 5 * * *" # каждый день в 05:00 UTC (08:00 по Москве)
+  workflow_dispatch: {} # + можно запустить вручную из вкладки Actions
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Вызвать /api/cron/refresh-roadmaps
+        run: |
+          curl -sf -X POST "${{ secrets.BACKEND_URL }}/api/cron/refresh-roadmaps?limit=15" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}"

@@ -513,6 +513,7 @@ h1, h2, h3, h4 { letter-spacing: 0; }
 /* Landing page */
 .landing-header { background: rgba(247,248,244,.82); border-bottom-color: rgba(220,229,221,.8); }
 .landing-header .brand { color: var(--purple-ink); }
+.landing-brand-short { display: none; }
 .landing-nav a { color: var(--ink-soft); }
 .hero { isolation: isolate; }
 .hero::after {
@@ -640,6 +641,8 @@ h1, h2, h3, h4 { letter-spacing: 0; }
   .toast-wrap { left: 16px; right: 16px; bottom: 16px; }
 }
 @media (max-width: 380px) {
+  .landing-brand-full { display: none; }
+  .landing-brand-short { display: inline; }
   .container { padding-left: 16px; padding-right: 16px; }
   .brand { gap: 7px; }
   .hero-stats { gap: 8px; }

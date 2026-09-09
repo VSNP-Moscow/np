@@ -1,9 +1,9 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { query } from "../db.js";
+import { query, mapUser } from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { startDiagnostic, handleDiagnosticReply, isDiagnosticActive, getDiagnosticProgress, assistantReply, QUICK_ACTIONS, quickActionText } from "../services/mentor.js";
-import { generateRoadmap, getStoredRoadmap, addProgressItem, listProgress, reportProgress, mentorRateProgress } from "../services/roadmap.js";
+import { generateRoadmap, getStoredRoadmap, getRoadmapWorkflow, saveMentorDraft, approveRoadmap, requestRoadmapChanges, addProgressItem, listProgress, reportProgress, mentorRateProgress } from "../services/roadmap.js";
 import { hasApiKey, aiProviderInfo } from "../services/gemini.js";
 import { getOrGenerateDigest, reviewReportDraft, getOrGenerateMethodicalTips, getInactivityNudge } from "../services/aiFeatures.js";
 import { awardCoins, REWARDS } from "../services/gamification.js";
@@ -50,7 +50,17 @@ router.post("/diagnostic/reply", requireAuth, async (req, res) => {
   await saveChatRow(req.user.id, { role: "user", text });
   const newMsgs = await handleDiagnosticReply(req.user, text);
   for (const m of newMsgs) await saveChatRow(req.user.id, m);
-  res.json({ messages: newMsgs, diagnosticActive: await isDiagnosticActive(req.user.id), diagnosticProgress: await getDiagnosticProgress(req.user.id) });
+  const diagnosticActive = await isDiagnosticActive(req.user.id);
+  let roadmap = null;
+  if (!diagnosticActive) {
+    const { rows } = await query("SELECT * FROM users WHERE id = $1", [req.user.id]);
+    roadmap = await generateRoadmap(mapUser(rows[0])).catch((error) => {
+      console.error("[diagnostic] automatic roadmap draft failed:", error.message || error);
+      return null;
+    });
+    if (req.user.mentorId && roadmap) await createNotification(req.user.mentorId, "roadmap", "Проект плана готов к проверке", `${req.user.fullName}: ИИ подготовил новую дорожную карту.`, `#/mentees/${req.user.id}`);
+  }
+  res.json({ messages: newMsgs, diagnosticActive, diagnosticProgress: await getDiagnosticProgress(req.user.id), roadmap });
 });
 
 router.post("/chat", requireAuth, async (req, res) => {
@@ -70,6 +80,7 @@ router.get("/quick-actions", requireAuth, (req, res) => {
 
 // The star feature: web-search-powered, region-aware roadmap.
 router.post("/roadmap/generate", requireAuth, roadmapLimiter, async (req, res) => {
+  if (req.user.role !== "user") return res.status(403).json({ error: "Для наставника обновление ИИ доступно в карточке педагога" });
   const region = (req.body?.region || req.user.region || "").trim();
   if (!region) return res.status(400).json({ error: "Укажите регион в профиле или в запросе" });
   if (region !== req.user.region) { await query("UPDATE users SET region = $1 WHERE id = $2", [region, req.user.id]); req.user.region = region; }
@@ -86,13 +97,61 @@ router.get("/roadmap", requireAuth, async (req, res) => {
   res.json({ roadmap: await getStoredRoadmap(req.user.id) });
 });
 
+async function confirmedMentee(mentorId, userId) {
+  const { rows } = await query("SELECT * FROM users WHERE id=$1 AND mentor_id=$2 AND mentor_status='confirmed'", [userId, mentorId]);
+  return rows[0] ? mapUser(rows[0]) : null;
+}
+
+router.get("/roadmap/mentee/:userId", requireAuth, requireRole("mentor"), async (req, res) => {
+  if (!await confirmedMentee(req.user.id, req.params.userId)) return res.status(404).json({ error: "Педагог не найден среди ваших подопечных" });
+  res.json({ workflow: await getRoadmapWorkflow(req.params.userId) });
+});
+
+router.put("/roadmap/mentee/:userId", requireAuth, requireRole("mentor"), async (req, res) => {
+  if (!await confirmedMentee(req.user.id, req.params.userId)) return res.status(404).json({ error: "Педагог не найден среди ваших подопечных" });
+  const roadmap = await saveMentorDraft(req.params.userId, req.user.id, req.body || {});
+  if (!roadmap) return res.status(404).json({ error: "Сначала создайте предложение ИИ" });
+  await createNotification(req.params.userId, "roadmap", "Наставник обновил план", "Изменения сохранены и ожидают окончательного утверждения.", "#/roadmap");
+  res.json({ roadmap });
+});
+
+router.post("/roadmap/mentee/:userId/approve", requireAuth, requireRole("mentor"), async (req, res) => {
+  if (!await confirmedMentee(req.user.id, req.params.userId)) return res.status(404).json({ error: "Педагог не найден среди ваших подопечных" });
+  const roadmap = await approveRoadmap(req.params.userId, req.user.id, req.body?.mentorComment);
+  if (!roadmap) return res.status(404).json({ error: "План не найден" });
+  await query("UPDATE users SET current_stage=GREATEST(current_stage,3) WHERE id=$1", [req.params.userId]);
+  await createNotification(req.params.userId, "roadmap", `План развития v${roadmap.version} утверждён`, req.body?.mentorComment || "Наставник проверил и опубликовал дорожную карту.", "#/roadmap");
+  res.json({ roadmap });
+});
+
+router.post("/roadmap/mentee/:userId/request-changes", requireAuth, requireRole("mentor"), async (req, res) => {
+  if (!await confirmedMentee(req.user.id, req.params.userId)) return res.status(404).json({ error: "Педагог не найден среди ваших подопечных" });
+  const roadmap = await requestRoadmapChanges(req.params.userId, req.user.id, req.body?.comment);
+  if (!roadmap) return res.status(400).json({ error: "Напишите, что должен скорректировать ИИ" });
+  await createNotification(req.params.userId, "roadmap", "План возвращён на доработку", roadmap.mentorComment, "#/roadmap");
+  res.json({ roadmap });
+});
+
+router.post("/roadmap/mentee/:userId/ai-revise", requireAuth, requireRole("mentor"), roadmapLimiter, async (req, res) => {
+  const mentee = await confirmedMentee(req.user.id, req.params.userId);
+  if (!mentee) return res.status(404).json({ error: "Педагог не найден среди ваших подопечных" });
+  const roadmap = await generateRoadmap(mentee);
+  await createNotification(req.params.userId, "roadmap", "ИИ подготовил новую редакцию", "Наставник получил её на проверку; утверждённая версия пока не менялась.", "#/roadmap");
+  res.json({ roadmap, workflow: await getRoadmapWorkflow(req.params.userId) });
+});
+
 // ---------------- прогресс по мероприятиям: отчёт наставляемого + оценка наставника ----------------
 // Наставляемый добавляет мероприятие дорожной карты в работу.
 router.post("/roadmap/progress", requireAuth, async (req, res) => {
   const { competencyId, eventTitle, eventUrl, weight } = req.body || {};
   if (!competencyId || !eventTitle) return res.status(400).json({ error: "Укажите компетенцию и название мероприятия" });
-  const item = await addProgressItem(req.user.id, { competencyId, eventTitle, eventUrl, weight });
-  res.json({ progress: item });
+  try {
+    const item = await addProgressItem(req.user.id, { competencyId, eventTitle, eventUrl, weight });
+    res.json({ progress: item });
+  } catch (error) {
+    if (error.code === "NO_APPROVED_ROADMAP") return res.status(409).json({ error: "Сначала наставник должен утвердить дорожную карту" });
+    throw error;
+  }
 });
 
 router.get("/roadmap/progress", requireAuth, async (req, res) => {

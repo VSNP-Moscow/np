@@ -45,7 +45,7 @@ export const pool = usePostgres
       },
     };
 
-const JSON_COLUMNS = new Set(["scores", "priorities", "answers", "notes", "chips", "questions", "sources", "test_answers", "options"]);
+const JSON_COLUMNS = new Set(["scores", "priorities", "answers", "notes", "chips", "questions", "sources", "search_status", "test_answers", "options"]);
 
 function hydrateRows(rows) {
   return rows.map((row) => {
@@ -196,10 +196,38 @@ export async function initSchema() {
   if (usePostgres) {
     await pgPool.query("ALTER TABLE message_attachments ADD COLUMN IF NOT EXISTS data_bytes BYTEA");
     await pgPool.query("ALTER TABLE message_attachments ALTER COLUMN data_base64 DROP NOT NULL");
+    await pgPool.query("ALTER TABLE roadmaps ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'approved'");
+    await pgPool.query("ALTER TABLE roadmaps ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 0");
+    await pgPool.query("ALTER TABLE roadmaps ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'ai'");
+    await pgPool.query("ALTER TABLE roadmaps ADD COLUMN IF NOT EXISTS mentor_comment TEXT");
+    await pgPool.query("ALTER TABLE roadmaps ADD COLUMN IF NOT EXISTS change_reason TEXT");
+    await pgPool.query("ALTER TABLE roadmaps ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id) ON DELETE SET NULL");
+    await pgPool.query("ALTER TABLE roadmaps ADD COLUMN IF NOT EXISTS approved_by UUID REFERENCES users(id) ON DELETE SET NULL");
+    await pgPool.query("ALTER TABLE roadmaps ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ");
+    await pgPool.query("ALTER TABLE roadmaps ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()");
+    await pgPool.query("ALTER TABLE roadmaps ADD COLUMN IF NOT EXISTS sources JSONB NOT NULL DEFAULT '[]'");
+    await pgPool.query("ALTER TABLE roadmaps ADD COLUMN IF NOT EXISTS search_status JSONB NOT NULL DEFAULT '{}'");
   } else {
     const columns = sqlite.prepare("PRAGMA table_info(message_attachments)").all();
     if (!columns.some((column) => column.name === "data_bytes")) {
       sqlite.exec("ALTER TABLE message_attachments ADD COLUMN data_bytes BLOB");
+    }
+    const roadmapColumns = sqlite.prepare("PRAGMA table_info(roadmaps)").all();
+    const roadmapMigrations = [
+      ["status", "ALTER TABLE roadmaps ADD COLUMN status TEXT NOT NULL DEFAULT 'approved'"],
+      ["version", "ALTER TABLE roadmaps ADD COLUMN version INTEGER NOT NULL DEFAULT 0"],
+      ["source", "ALTER TABLE roadmaps ADD COLUMN source TEXT NOT NULL DEFAULT 'ai'"],
+      ["mentor_comment", "ALTER TABLE roadmaps ADD COLUMN mentor_comment TEXT"],
+      ["change_reason", "ALTER TABLE roadmaps ADD COLUMN change_reason TEXT"],
+      ["updated_by", "ALTER TABLE roadmaps ADD COLUMN updated_by TEXT"],
+      ["approved_by", "ALTER TABLE roadmaps ADD COLUMN approved_by TEXT"],
+      ["approved_at", "ALTER TABLE roadmaps ADD COLUMN approved_at TEXT"],
+      ["updated_at", "ALTER TABLE roadmaps ADD COLUMN updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP"],
+      ["sources", "ALTER TABLE roadmaps ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'"],
+      ["search_status", "ALTER TABLE roadmaps ADD COLUMN search_status TEXT NOT NULL DEFAULT '{}'"],
+    ];
+    for (const [name, sql] of roadmapMigrations) {
+      if (!roadmapColumns.some((column) => column.name === name)) sqlite.exec(sql);
     }
   }
 }

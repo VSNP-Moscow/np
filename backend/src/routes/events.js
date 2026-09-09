@@ -10,17 +10,22 @@ const router = Router();
 // Каталог мероприятий читается часто и меняется редко — кэшируем на 60с.
 // Персональная отметка "пройдено" не кэшируется (личная, у каждого своя), поэтому
 // кэшируем только сам каталог, а completion подмешиваем после чтения из кэша.
-async function loadCatalog(area) {
-  return cached(`events:catalog:${area || "all"}`, 60_000, async () => {
-    const { rows } = area && area !== "all"
-      ? await query("SELECT * FROM events WHERE area = $1 ORDER BY created_at DESC", [area])
-      : await query("SELECT * FROM events ORDER BY created_at DESC");
-    return rows;
+async function loadCatalog(area, search) {
+  const term = String(search || "").trim().slice(0, 100);
+  return cached(`events:catalog:${area || "all"}:${term.toLowerCase()}`, 60_000, async () => {
+    const clauses = [];
+    const params = [];
+    if (area && area !== "all") { params.push(area); clauses.push(`area = $${params.length}`); }
+    const { rows } = await query(`SELECT * FROM events${clauses.length ? " WHERE " + clauses.join(" AND ") : ""} ORDER BY created_at DESC`, params);
+    if (!term) return rows;
+    const needle = term.toLocaleLowerCase("ru-RU");
+    return rows.filter((event) => [event.title, event.description, event.source, event.region]
+      .some((value) => String(value || "").toLocaleLowerCase("ru-RU").includes(needle)));
   });
 }
 
 router.get("/", requireAuth, async (req, res) => {
-  const catalog = await loadCatalog(req.query.area);
+  const catalog = await loadCatalog(req.query.area, req.query.q);
   const { rows: completions } = await query("SELECT event_id, reflection FROM event_completions WHERE user_id = $1", [req.user.id]);
   const completedMap = new Map(completions.map((c) => [c.event_id, c.reflection]));
   res.json({ events: catalog.map((e) => mapEvent(e, completedMap.has(e.id) ? { completed: true, reflection: completedMap.get(e.id) } : null)) });

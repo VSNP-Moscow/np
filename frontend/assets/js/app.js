@@ -157,6 +157,12 @@
     const hash = location.hash.replace("#/", "");
     currentView = hash.split("/")[0] || "dashboard";
     currentSub = hash.split("/")[1] || null;
+    const currentUser = API.getCurUser();
+    if (currentUser?.role === "user" && !API.hasScores(currentUser)) {
+      currentView = "assistant";
+      currentSub = null;
+      location.hash = "/assistant";
+    }
     try {
       const st = await API.aiStatus();
       AI_LIVE = st.liveMode;
@@ -177,6 +183,12 @@
   }
 
   async function go(view, sub) {
+    const currentUser = API.getCurUser();
+    if (currentUser?.role === "user" && !API.hasScores(currentUser) && !["assistant", "profile"].includes(view)) {
+      view = "assistant";
+      sub = null;
+      toast("Сначала завершите стартовую диагностику");
+    }
     currentView = view; currentSub = sub || null;
     location.hash = "/" + view + (sub ? "/" + sub : "");
     $$(".nav-link").forEach(n => n.classList.toggle("active", n.dataset.view === view));
@@ -189,7 +201,8 @@
     if (!user) { logout(); return; }
     const shell = $("#shell");
     shell.innerHTML = "";
-    const navItems = NAV[user.role] || NAV.user;
+    const onboardingRequired = user.role === "user" && !API.hasScores(user);
+    const navItems = onboardingRequired ? NAV.user.filter((item) => ["assistant", "profile"].includes(item.id)) : (NAV[user.role] || NAV.user);
     let unread = 0;
     try { unread = (await API.getNotifications()).unread || 0; } catch (e) { /* notifications are non-blocking */ }
     lastUnreadCount = unread;
@@ -202,6 +215,7 @@
     sidebar.appendChild(su);
 
     if (user.role === "user") sidebar.appendChild(coinWidget(user));
+    if (onboardingRequired) sidebar.appendChild(el("div", { class: "onboarding-side-note" }, ["Сначала завершите диагностику. Остальные разделы откроются автоматически."]));
 
     if (!AI_LIVE) {
       sidebar.appendChild(el("div", { class: "badge badge-yellow", style: "margin-bottom:14px; width:100%; box-sizing:border-box; text-align:center; padding:8px;" }, ["⚠️ Офлайн-режим ИИ"]));
@@ -280,6 +294,9 @@
     if (!mainArea) return;
     const user = API.getCurUser();
     if (!user) { logout(); return; }
+    if (user.role === "user" && !API.hasScores(user) && !["assistant", "profile"].includes(currentView)) {
+      currentView = "assistant"; currentSub = null; location.hash = "/assistant";
+    }
     mainArea.innerHTML = "";
     const main = el("div", { class: "view-root" });
     mainArea.appendChild(main);
@@ -357,7 +374,7 @@
     const aiCta = el("div", { class: "roadmap-cta" }, [
       el("div", { class: "big" }, ["🤖"]),
       el("h4", {}, [has ? "Поговорить с ИИ-наставником" : "Пройти диалоговую диагностику"]),
-      el("p", {}, [has ? "Задайте вопрос или найдите новые мероприятия" : "5 минут разговора вместо теста"]),
+      el("p", {}, [has ? "Задайте вопрос или предложите корректировку утверждённого плана" : "Ответьте своими словами на 18 рабочих ситуаций"]),
     ]);
     aiCta.addEventListener("click", () => go("assistant"));
     const leftCol = el("div", {}, [aiCta]);
@@ -475,15 +492,21 @@
   let diagnosticActiveFlag = false;
 
   async function renderAssistant(main, user) {
-    topbar(main, "🤖 ИИ-наставник", AI_LIVE ? "Диалог вместо теста + поиск реальных мероприятий в интернете" : "Диалог вместо теста (офлайн-режим — без поиска в интернете)");
+    const onboarding = user.role === "user" && !API.hasScores(user);
+    topbar(main, onboarding ? "Стартовая диагностика" : "🤖 ИИ-ассистент пары", onboarding ? "Обязательный первый шаг · отвечайте своими словами" : "ИИ предлагает изменения, наставник проверяет и утверждает");
 
     const shellDiv = el("div", { class: "chat-shell" });
     const scroll = el("div", { class: "chat-scroll", id: "chatScroll" });
     shellDiv.appendChild(scroll);
     main.appendChild(shellDiv);
 
-    const chatData = await API.getAiChat();
+    let chatData = await API.getAiChat();
     let history = chatData.messages || [];
+    if (onboarding && !history.length && !chatData.diagnosticActive) {
+      history = await API.startDiagnostic();
+      chatData = await API.getAiChat();
+      history = chatData.messages || history;
+    }
     const diagActive = chatData.diagnosticActive;
     diagnosticActiveFlag = diagActive;
 
@@ -578,7 +601,7 @@
     if (m.role !== "user") row.appendChild(el("div", { class: "msg-avatar ai" }, ["🤖"]));
     row.appendChild(el("div", { class: "msg-bubble", html: mdLite(m.text) }));
     const wrap = el("div", {}, [row]);
-    if (m.chips && m.chips.length) {
+    if (!diagnosticActiveFlag && m.chips && m.chips.length) {
       const chipsWrap = el("div", { class: "msg-chips" });
       m.chips.forEach(c => {
         const chip = el("button", { class: "chip reply-chip" }, [c]);
@@ -615,9 +638,10 @@
         res.messages.forEach(m => scroll.appendChild(renderMsg(m)));
         scroll.scrollTop = scroll.scrollHeight;
         if (!res.diagnosticActive) {
-          // diagnostic just finished -> auto-generate roadmap
-          await autoGenerateRoadmap(user, scroll);
-          await renderMain();
+          if (!res.roadmap) await autoGenerateRoadmap(user, scroll);
+          await API.fetchMe();
+          if (res.roadmap) scroll.appendChild(renderMsg({ role: "ai", text: "Проект карты создан и отправлен наставнику на согласование." }));
+          await renderShell();
         }
       } else if (isRoadmapAction) {
         const rm = await API.generateRoadmap(user.region);
@@ -714,7 +738,15 @@
 
   function renderRoadmapContent(main, rm, progress, currentStage) {
     progress = progress || [];
+    const approved = rm.status === "approved";
+    const statusLabel = approved ? `Утверждено наставником · версия ${rm.version || 1}` : rm.status === "changes_requested" ? "Наставник запросил доработку" : "Проект ИИ ожидает проверки наставника";
+    main.appendChild(el("div", { class: "roadmap-workflow " + (approved ? "approved" : "pending") }, [
+      el("div", { class: "workflow-mark" }, [approved ? "✓" : "↻"]),
+      el("div", { class: "workflow-copy" }, [el("b", {}, [statusLabel]), el("span", {}, [approved ? (rm.mentorComment || "Можно приступать к мероприятиям и фиксировать прогресс.") : (rm.mentorComment || "До публикации карта доступна для просмотра, но не запускает рабочий маршрут.")])]),
+    ]));
+    if (rm.proposal) main.appendChild(el("div", { class: "roadmap-workflow pending" }, [el("div", { class: "workflow-mark" }, ["AI"]), el("div", { class: "workflow-copy" }, [el("b", {}, ["Новая редакция находится у наставника"]), el("span", {}, ["Вы продолжаете работать по утверждённой версии, пока наставник не опубликует следующую."])])]));
     main.appendChild(el("div", { class: "mode-badge " + (rm.mode === "live" || rm.mode === "ai" ? "live" : "offline") }, [rm.mode === "live" ? "✅ Найдено в интернете" : rm.mode === "ai" ? "🤖 Обработано ИИ из каталога" : "⚠️ Офлайн-каталог"]));
+    if (rm.searchStatus?.searchedAt) main.appendChild(el("div", { class: "search-audit" }, [`Поиск: проверено ${rm.searchStatus.checked || 0}, добавлено ${rm.searchStatus.found || 0} · ${new Date(rm.searchStatus.searchedAt).toLocaleString("ru-RU")}`]));
 
     if (rm.summary) main.appendChild(el("div", { class: "card" }, [el("div", { class: "card-title" }, ["💬 Комментарий ИИ-наставника"]), el("p", { style: "font-size:14px; color:var(--ink-soft);" }, [rm.summary])]));
 
@@ -731,10 +763,10 @@
     main.appendChild(algoCard);
 
     main.appendChild(el("h3", { style: "margin:26px 0 4px; font-size:18px; text-align:center;" }, ["Ваш путь обучения"]));
-    main.appendChild(renderJourneyMap(rm, progress));
+    main.appendChild(renderJourneyMap(rm, progress, approved));
 
     main.appendChild(el("h3", { style: "margin:30px 0 4px; font-size:18px;" }, ["Мероприятия по компетенциям"]));
-    (rm.priorities || []).forEach(p => main.appendChild(roadmapCompCard(p)));
+    (rm.priorities || []).forEach(p => main.appendChild(roadmapCompCard(p, approved)));
 
     if (rm.sources && rm.sources.length) {
       const srcCard = el("div", { class: "card" }, [el("div", { class: "card-title" }, ["🔗 Источники поиска"])]);
@@ -746,7 +778,7 @@
   // Карта пути в стиле Duolingo: каждый шаг = одно мероприятие дорожной карты, в порядке
   // приоритета (сначала самые слабые компетенции). Состояние узла берётся из roadmap_progress
   // пользователя (отчёт сдан/оценён = пройдено, взято в работу = текущий, иначе — следующий шаг).
-  function renderJourneyMap(rm, progress) {
+  function renderJourneyMap(rm, progress, canAct = true) {
     const steps = [];
     (rm.priorities || []).forEach(p => (p.events || []).forEach(ev => steps.push({ competency: p.competency, ev })));
     const map = el("div", { class: "journey-map" });
@@ -765,7 +797,8 @@
       const row = el("div", { class: "journey-row pos-" + (i % 4) });
       const node = el("div", { class: "journey-node " + state }, [state === "done" ? "✅" : comp.icon]);
       if (state === "done") node.appendChild(el("span", { class: "check-badge" }, ["✓"]));
-      node.addEventListener("click", () => openJourneyNodeModal(step.competency, step.ev, match));
+      if (canAct) node.addEventListener("click", () => openJourneyNodeModal(step.competency, step.ev, match));
+      else node.title = "Доступно после утверждения наставником";
       const col = el("div", { class: "journey-node-col" }, [
         node,
         el("span", { class: "journey-comp-tag" }, [comp.label]),
@@ -796,7 +829,7 @@
     document.body.appendChild(backdrop);
   }
 
-  function roadmapCompCard(p) {
+  function roadmapCompCard(p, canAct = true) {
     const comp = API.competency(p.competency) || { icon: "❓", label: p.competency, color: "purple" };
     const weak = p.score > 0 && p.score <= 2;
     const card = el("div", { class: "card" });
@@ -825,8 +858,10 @@
           ev.description ? el("div", { style: "font-size:12.5px; color:var(--ink-soft);" }, [ev.description]) : null,
         ]);
         if (ev.url) { const a = el("a", { href: ev.url, target: "_blank", rel: "noopener", style: "font-size:12px; color:var(--purple-ink); font-weight:700;" }, ["Открыть источник →"]); row.appendChild(a); }
-        const takeBtn = el("button", { class: "btn btn-ghost btn-sm", style: "margin-top:6px;" }, ["📌 Взять в работу и отчитаться"]);
-        takeBtn.addEventListener("click", () => openProgressReportModal(p.competency, ev));
+        const takeAttrs = { class: "btn btn-ghost btn-sm", style: "margin-top:6px;" };
+        if (!canAct) takeAttrs.disabled = "disabled";
+        const takeBtn = el("button", takeAttrs, [canAct ? "📌 Взять в работу и отчитаться" : "Ожидает утверждения"]);
+        if (canAct) takeBtn.addEventListener("click", () => openProgressReportModal(p.competency, ev));
         row.appendChild(takeBtn);
         card.appendChild(row);
       });
@@ -941,9 +976,19 @@
 
   /* =========================== EVENTS =========================== */
   let eventFilter = "all";
+  let eventSearch = "";
   async function renderEvents(main, user) {
     const isAdmin = user.role === "admin";
     topbar(main, "📅 Мероприятия", "Каталог платформы (общие мероприятия для всех регионов)", isAdmin ? [addBtn("+ Добавить", () => openEventModal(null))] : null);
+
+    const searchWrap = el("form", { class: "event-search" });
+    const searchInput = el("input", { type: "search", value: eventSearch, placeholder: "Название, источник или регион" });
+    const searchBtn = el("button", { class: "btn btn-primary btn-sm", type: "submit" }, ["Найти"]);
+    const clearBtn = el("button", { class: "btn btn-ghost btn-sm", type: "button", title: "Очистить поиск" }, ["×"]);
+    searchWrap.appendChild(searchInput); searchWrap.appendChild(searchBtn); searchWrap.appendChild(clearBtn);
+    searchWrap.addEventListener("submit", (e) => { e.preventDefault(); eventSearch = searchInput.value.trim(); renderMain(); });
+    clearBtn.addEventListener("click", () => { eventSearch = ""; renderMain(); });
+    main.appendChild(searchWrap);
 
     const filters = ["all", ...API.COMPETENCIES.map(c => c.id)];
     const chipRow = el("div", { class: "chip-row", style: "margin-bottom:18px;" });
@@ -955,8 +1000,8 @@
     });
     main.appendChild(chipRow);
 
-    const list = await API.listEvents(eventFilter);
-    if (!list.length) { main.appendChild(emptyState("📅", "Мероприятий нет", "В этой категории пока ничего не запланировано.")); return; }
+    const list = await API.listEvents(eventFilter, eventSearch);
+    if (!list.length) { main.appendChild(emptyState("📅", "Ничего не найдено", "Измените запрос или выберите другую компетенцию.")); return; }
     list.forEach(e => main.appendChild(eventCard(e, user)));
   }
 
@@ -1349,8 +1394,109 @@
       const card = el("div", { class: "card" }, [el("div", { class: "card-title" }, ["📊 Компетенции"])]);
       API.COMPETENCIES.forEach(c => card.appendChild(miniScoreRow(c, m.scores[c.id])));
       main.appendChild(card);
-    } else main.appendChild(emptyState("📊", "Диагностика ещё не пройдена", "Педагог пока не прошёл диалог с ИИ-наставником."));
+    } else main.appendChild(emptyState("📊", "Диагностика ещё не пройдена", "Педагог пока не завершил обязательный стартовый диалог."));
+    if (API.hasScores(m)) await renderMentorRoadmapEditor(main, m);
     main.appendChild(await chatCard(m));
+  }
+
+  async function renderMentorRoadmapEditor(main, mentee) {
+    const workflow = await API.getMenteeRoadmap(mentee.id);
+    const roadmap = workflow.draft || workflow.active;
+    const section = el("section", { class: "mentor-roadmap" });
+    const heading = el("div", { class: "mentor-roadmap-head" }, [
+      el("div", {}, [el("div", { class: "eyebrow" }, ["СОВМЕСТНАЯ РАБОТА ИИ + НАСТАВНИК"]), el("h2", {}, ["План развития и дорожная карта"]), el("p", {}, ["ИИ собирает предложение из диагностики и прогресса. Вы проверяете содержание, редактируете шаги и публикуете рабочую версию."])])
+    ]);
+    const aiBtn = el("button", { class: "btn btn-secondary btn-sm" }, [roadmap ? "Запросить новую редакцию у ИИ" : "Создать проект с ИИ"]);
+    aiBtn.addEventListener("click", async () => {
+      aiBtn.disabled = true; aiBtn.textContent = "ИИ анализирует данные…";
+      try { await API.reviseMenteeRoadmap(mentee.id); toast("Новая редакция готова к вашей проверке"); await renderMain(); }
+      catch (e) { apiErr(e); aiBtn.disabled = false; aiBtn.textContent = "Повторить запрос"; }
+    });
+    heading.appendChild(aiBtn);
+    section.appendChild(heading);
+    if (!roadmap) {
+      section.appendChild(el("div", { class: "roadmap-workflow pending" }, [el("div", { class: "workflow-mark" }, ["1"]), el("div", { class: "workflow-copy" }, [el("b", {}, ["Проект ещё не создан"]), el("span", {}, ["Запустите анализ ИИ, затем проверьте и утвердите результат."])])]));
+      main.appendChild(section);
+      return;
+    }
+
+    const status = workflow.draft ? (workflow.draft.status === "changes_requested" ? "Возвращён на доработку" : "Ожидает вашего решения") : `Опубликована версия ${workflow.active.version || 1}`;
+    section.appendChild(el("div", { class: "roadmap-workflow " + (workflow.draft ? "pending" : "approved") }, [
+      el("div", { class: "workflow-mark" }, [workflow.draft ? "AI" : "✓"]),
+      el("div", { class: "workflow-copy" }, [el("b", {}, [status]), el("span", {}, [roadmap.changeReason || "Последняя редакция сохранена в системе."])])
+    ]));
+
+    const form = el("div", { class: "roadmap-editor" });
+    const summaryLabel = el("label", { class: "editor-field wide" }, [el("span", {}, ["Обоснование и цель плана"])]);
+    const summary = el("textarea", { rows: "4", placeholder: "Кратко зафиксируйте цели и логику маршрута" });
+    summary.value = roadmap.summary || "";
+    summaryLabel.appendChild(summary); form.appendChild(summaryLabel);
+
+    const priorities = el("div", { class: "roadmap-priority-list" });
+    (roadmap.priorities || []).forEach((priority) => priorities.appendChild(mentorPriorityEditor(priority)));
+    form.appendChild(priorities);
+
+    const commentLabel = el("label", { class: "editor-field wide" }, [el("span", {}, ["Комментарий наставника педагогу и ИИ"])]);
+    const comment = el("textarea", { rows: "3", placeholder: "Что принято, что изменить и на что обратить внимание" });
+    comment.value = roadmap.mentorComment || "";
+    commentLabel.appendChild(comment); form.appendChild(commentLabel);
+
+    const actions = el("div", { class: "roadmap-editor-actions" });
+    const save = el("button", { class: "btn btn-secondary" }, ["Сохранить черновик"]);
+    const changes = el("button", { class: "btn btn-ghost" }, ["Вернуть на доработку"]);
+    const approve = el("button", { class: "btn btn-primary" }, ["Утвердить и опубликовать"]);
+    const payload = () => ({ summary: summary.value.trim(), mentorComment: comment.value.trim(), priorities: collectMentorPriorities(priorities, mentee.scores) });
+    save.addEventListener("click", async () => { try { await API.saveMenteeRoadmap(mentee.id, payload()); toast("Черновик сохранён"); await renderMain(); } catch (e) { apiErr(e); } });
+    changes.addEventListener("click", async () => { if (!comment.value.trim()) return toast("Добавьте комментарий для ИИ и педагога", true); try { await API.saveMenteeRoadmap(mentee.id, payload()); await API.requestMenteeRoadmapChanges(mentee.id, comment.value.trim()); toast("План возвращён на доработку"); await renderMain(); } catch (e) { apiErr(e); } });
+    approve.addEventListener("click", async () => { try { await API.saveMenteeRoadmap(mentee.id, payload()); const approved = await API.approveMenteeRoadmap(mentee.id, comment.value.trim()); toast(`Версия ${approved.version} опубликована`); await renderMain(); } catch (e) { apiErr(e); } });
+    actions.appendChild(save); actions.appendChild(changes); actions.appendChild(approve); form.appendChild(actions);
+    section.appendChild(form);
+
+    if (workflow.history?.length) {
+      const history = el("div", { class: "roadmap-history" }, [el("b", {}, ["История решений"])]);
+      workflow.history.slice(0, 5).forEach((item) => history.appendChild(el("span", {}, [`v${item.version} · ${formatDate(item.approvedAt)}${item.mentorComment ? " · " + item.mentorComment : ""}`])));
+      section.appendChild(history);
+    }
+    main.appendChild(section);
+  }
+
+  function mentorPriorityEditor(priority) {
+    const comp = API.competency(priority.competency) || { icon: "•", label: priority.competency };
+    const block = el("div", { class: "roadmap-edit-block", "data-competency": priority.competency, "data-score": priority.score || 0 }, [
+      el("div", { class: "roadmap-edit-title" }, [el("span", {}, [`${comp.icon} ${comp.label}`]), el("b", {}, [`${priority.score || "—"}/5`])])
+    ]);
+    const events = el("div", { class: "roadmap-edit-events" });
+    (priority.events || []).forEach((event) => events.appendChild(mentorEventEditor(event)));
+    const add = el("button", { class: "btn btn-ghost btn-sm", type: "button" }, ["+ Добавить шаг"]);
+    add.addEventListener("click", () => events.appendChild(mentorEventEditor({})));
+    block.appendChild(events); block.appendChild(add);
+    return block;
+  }
+
+  function mentorEventEditor(event) {
+    const row = el("div", { class: "roadmap-event-editor" });
+    const fields = [
+      ["title", "Название шага", event.title], ["date", "Дата / период", event.date],
+      ["source", "Организация", event.source], ["url", "Ссылка", event.url], ["description", "Ожидаемый результат", event.description],
+    ];
+    fields.forEach(([name, placeholder, value]) => { const input = el("input", { name, placeholder }); input.value = value || ""; row.appendChild(input); });
+    const controls = el("div", { class: "roadmap-event-controls" });
+    const up = el("button", { class: "icon-btn", type: "button", title: "Переместить выше" }, ["↑"]);
+    const down = el("button", { class: "icon-btn", type: "button", title: "Переместить ниже" }, ["↓"]);
+    const remove = el("button", { class: "icon-btn danger", type: "button", title: "Удалить шаг" }, ["×"]);
+    up.addEventListener("click", () => row.previousElementSibling && row.parentElement.insertBefore(row, row.previousElementSibling));
+    down.addEventListener("click", () => row.nextElementSibling && row.parentElement.insertBefore(row.nextElementSibling, row));
+    remove.addEventListener("click", () => row.remove());
+    controls.appendChild(up); controls.appendChild(down); controls.appendChild(remove); row.appendChild(controls);
+    return row;
+  }
+
+  function collectMentorPriorities(root, scores) {
+    return $$(".roadmap-edit-block", root).map((block) => ({
+      competency: block.dataset.competency,
+      score: Number(block.dataset.score || scores?.[block.dataset.competency] || 0),
+      events: $$(".roadmap-event-editor", block).map((row) => Object.fromEntries($$("input", row).map((input) => [input.name, input.value.trim()]))).filter((event) => event.title),
+    }));
   }
 
   /* =========================== MENTOR: GROUPS =========================== */

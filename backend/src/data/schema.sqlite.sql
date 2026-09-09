@@ -77,8 +77,38 @@ CREATE TABLE IF NOT EXISTS roadmaps (
   priorities TEXT NOT NULL DEFAULT '[]',
   mode TEXT NOT NULL DEFAULT 'offline',
   raw_text TEXT,
-  generated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  sources TEXT NOT NULL DEFAULT '[]',
+  search_status TEXT NOT NULL DEFAULT '{}',
+  generated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  status TEXT NOT NULL DEFAULT 'approved',
+  version INTEGER NOT NULL DEFAULT 0,
+  source TEXT NOT NULL DEFAULT 'ai',
+  mentor_comment TEXT,
+  change_reason TEXT,
+  updated_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  approved_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  approved_at TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS roadmap_versions (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  region TEXT,
+  summary TEXT,
+  priorities TEXT NOT NULL DEFAULT '[]',
+  mode TEXT NOT NULL DEFAULT 'offline',
+  sources TEXT NOT NULL DEFAULT '[]',
+  search_status TEXT NOT NULL DEFAULT '{}',
+  source TEXT NOT NULL DEFAULT 'mentor',
+  mentor_comment TEXT,
+  approved_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  approved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (user_id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_roadmap_versions_user ON roadmap_versions(user_id, version DESC);
 
 CREATE TABLE IF NOT EXISTS roadmap_progress (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),

@@ -2,14 +2,6 @@ import { COMPETENCIES, query } from "../db.js";
 import { callGemini, hasApiKey } from "./gemini.js";
 import { awardCoins, REWARDS } from "./gamification.js";
 
-const SCORE_CHIPS = [
-  { v: 1, t: "1 · Нужна помощь с нуля" },
-  { v: 2, t: "2 · Пока есть трудности" },
-  { v: 3, t: "3 · Получается нестабильно" },
-  { v: 4, t: "4 · Получается уверенно" },
-  { v: 5, t: "5 · Это моя сильная сторона" },
-];
-
 const DIALOG_ITEMS = [
   { id: "subject", key: "subject_science", text: "Ученик задаёт неожиданный вопрос за пределами учебника. Насколько уверенно вы объясните научную основу темы и свяжете её с программой?" },
   { id: "subject", key: "subject_gaps", text: "По итогам контрольной треть класса не усвоила тему. Насколько уверенно вы определите причины ошибок и перестроите объяснение?" },
@@ -103,8 +95,8 @@ export async function startDiagnostic(user) {
   await query("DELETE FROM ai_chats WHERE user_id = $1", [user.id]); // начинаем диагностику заново — старую историю чата с ИИ очищаем
   const q = questionFor(0);
   return [
-    { role: "ai", text: `Привет, ${firstName(user)}! Проведём профессиональную диагностику в формате диалога: **18 рабочих ситуаций по 6 компетенциям**. Это займёт 7–10 минут. Можно выбрать оценку или ответить своими словами — я учту контекст и уточню важные трудности.` },
-    { role: "ai", text: `**Вопрос 1 из ${DIALOG_ITEMS.length}**\n${q.comp.icon} **${q.comp.label}**\n${q.text}`, chips: SCORE_CHIPS.map((c) => c.t) },
+    { role: "ai", text: `Привет, ${firstName(user)}! Это обязательная стартовая диагностика: **18 рабочих ситуаций по 6 компетенциям**. Отвечайте своими словами и приводите короткий пример из практики. Я определю уровень по смыслу ответа, подготовлю проект плана, а наставник проверит и утвердит его.` },
+    { role: "ai", text: `**Вопрос 1 из ${DIALOG_ITEMS.length}**\n${q.comp.icon} **${q.comp.label}**\n${q.text}` },
   ];
 }
 
@@ -144,17 +136,11 @@ export async function handleDiagnosticReply(user, input) {
     return out;
   }
 
-  const chipMatch = SCORE_CHIPS.find((c) => c.t === input);
-  const score = chipMatch ? chipMatch.v : await inferScoreWithAi(q.text, input);
+  const score = await inferScoreWithAi(q.text, input);
   state.answers[q.key] = score;
   out.push({ role: "ai", text: pick(MICRO_FEEDBACK[score]) });
 
-  if (score <= 2 && chipMatch) {
-    state.awaitingFollowup = true;
-    out.push({ role: "ai", text: FOLLOWUP_LOW[q.id] });
-  } else {
-    await advance(state, out, user);
-  }
+  await advance(state, out, user);
   await saveProfile(user.id, state);
   return out;
 }
@@ -173,10 +159,10 @@ async function advance(state, out, user) {
     const weak = COMPETENCIES.filter((c) => scores[c.id] <= 2.8).map((c) => `${c.icon} ${c.label} (${scores[c.id]}/5)`).join(", ") || "выраженных дефицитов не выявлено";
     const strong = COMPETENCIES.filter((c) => scores[c.id] >= 4).map((c) => `${c.icon} ${c.label} (${scores[c.id]}/5)`).join(", ") || "профиль пока ровный — сильные стороны проявятся в практике";
     out.push({ role: "ai", text: `**Диагностика завершена**\nСредний балл: **${(Object.values(scores).reduce((a, b) => a + b, 0) / 6).toFixed(1)}/5**\n\n**Сильные стороны:** ${strong}\n**Приоритеты развития:** ${weak}` });
-    out.push({ role: "ai", text: `Сейчас поищу для вас реальные мероприятия в регионе «${user.region || "не указан"}» и соберу дорожную карту — откройте вкладку «Дорожная карта».`, action: "generate-roadmap" });
+    out.push({ role: "ai", text: `Теперь я подготовлю проект плана развития и найду мероприятия для региона «${user.region || "не указан"}». Проект получит ваш наставник: только после его проверки и утверждения карта станет рабочей.`, action: "generate-roadmap" });
   } else {
     const q = questionFor(state.stepIndex);
-    out.push({ role: "ai", text: `**Вопрос ${state.stepIndex + 1} из ${DIALOG_ITEMS.length}**\n${q.comp.icon} **${q.comp.label}**\n${q.text}`, chips: SCORE_CHIPS.map((c) => c.t) });
+    out.push({ role: "ai", text: `**Вопрос ${state.stepIndex + 1} из ${DIALOG_ITEMS.length}**\n${q.comp.icon} **${q.comp.label}**\n${q.text}` });
   }
 }
 
@@ -244,14 +230,17 @@ function localAnswer(user, text) {
   return `Судя по карте, точка роста — ${w.comp.icon} ${w.comp.label} (${w.score}/5). Расскажите подробнее о ситуации, либо выберите быстрое действие ниже.`;
 }
 
-const SYS_PROMPT = "Ты — цифровой ИИ-наставник в системе «НавигаторПедагога» (методология Поляковой Г.Д.). Ты выполняешь основные функции наставника: разбираешь рабочие ситуации, подсказываешь конкретные приёмы, отслеживаешь прогресс по дорожной карте. Отвечай на русском, конкретно и по-доброму, с эмодзи-структурой, без длинных вступлений. Не изобретай названия мероприятий - для поиска мероприятий пользователь должен использовать отдельную функцию 'Обновить дорожную карту'. Помни: у наставляемого есть ещё и человек-наставник, который вправе скорректировать предложенный тобой путь — если пользователь спрашивает о решениях наставника, уважительно отсылай к нему.";
+const SYS_PROMPT = "Ты — цифровой ассистент пары «педагог + наставник» в системе «НавигаторПедагога». Анализируй диагностику, утверждённую дорожную карту, прогресс и комментарии наставника. Предлагай конкретные корректировки, но никогда не утверждай, что сам изменил рабочий план: ИИ создаёт предложение, наставник редактирует и публикует версию. Отвечай на русском, конкретно, без длинных вступлений. Не изобретай мероприятия и ссылки.";
 
 export async function assistantReply(user, text, history) {
   if (hasApiKey()) {
     try {
-      const ctx = user.scores && Object.values(user.scores).some((v) => v > 0)
+      const { rows: roadmapRows } = await query("SELECT status, version, summary, mentor_comment, priorities FROM roadmaps WHERE user_id = $1", [user.id]);
+      const roadmap = roadmapRows[0];
+      const roadmapContext = roadmap ? ` Статус плана: ${roadmap.status}; версия: ${roadmap.version || 0}; резюме: ${roadmap.summary || "—"}; комментарий наставника: ${roadmap.mentor_comment || "—"}; приоритеты: ${JSON.stringify(roadmap.priorities || []).slice(0, 3500)}.` : " План ещё не создан.";
+      const ctx = (user.scores && Object.values(user.scores).some((v) => v > 0)
         ? `[Педагог: ${user.fullName}, предмет: ${user.subject}, регион: ${user.region}, баллы: ${Object.entries(user.scores).map(([k, v]) => k + ":" + v).join(" ")}] `
-        : `[Педагог: ${user.fullName}, предмет: ${user.subject}, регион: ${user.region}, диагностика не пройдена] `;
+        : `[Педагог: ${user.fullName}, предмет: ${user.subject}, регион: ${user.region}, диагностика не пройдена] `) + roadmapContext;
       const msgs = (history || []).slice(-10).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text }));
       const last = msgs[msgs.length - 1];
       if (last && last.role === "user") last.content = ctx + last.content;

@@ -127,7 +127,13 @@
     async declineMentee(menteeId) { const data = await request("POST", `/users/mentees/${menteeId}/decline`); return data.user; },
 
     // ---- events ----
-    async listEvents(area) { const data = await request("GET", "/events" + (area && area !== "all" ? "?area=" + area : "")); return data.events; },
+    async listEvents(area, search) {
+      const params = new URLSearchParams();
+      if (area && area !== "all") params.set("area", area);
+      if (search) params.set("q", search);
+      const data = await request("GET", "/events" + (params.size ? "?" + params : ""));
+      return data.events;
+    },
     async createEvent(ev) { const data = await request("POST", "/events", ev); return data.event; },
     async updateEvent(id, ev) { const data = await request("PUT", "/events/" + id, ev); return data.event; },
     async deleteEvent(id) { return request("DELETE", "/events/" + id); },
@@ -177,6 +183,11 @@
     async downloadPortfolioPdf() { return download("/ai/portfolio/pdf", "Портфолио.pdf"); },
     async mentorRateProgress(id, mentorRating) { const data = await request("POST", `/ai/roadmap/progress/${id}/mentor-rate`, { mentorRating }); return data.progress; },
     async menteeReports() { const data = await request("GET", "/ai/roadmap/progress/mentees"); return data.progress; },
+    async getMenteeRoadmap(userId) { const data = await request("GET", `/ai/roadmap/mentee/${userId}`); return data.workflow; },
+    async saveMenteeRoadmap(userId, payload) { const data = await request("PUT", `/ai/roadmap/mentee/${userId}`, payload); return data.roadmap; },
+    async approveMenteeRoadmap(userId, mentorComment) { const data = await request("POST", `/ai/roadmap/mentee/${userId}/approve`, { mentorComment }); return data.roadmap; },
+    async requestMenteeRoadmapChanges(userId, comment) { const data = await request("POST", `/ai/roadmap/mentee/${userId}/request-changes`, { comment }); return data.roadmap; },
+    async reviseMenteeRoadmap(userId) { const data = await request("POST", `/ai/roadmap/mentee/${userId}/ai-revise`); return data.workflow; },
 
     // ---- структурированная диагностика (реальный тест из диссертации) ----
     async diagnosticItems() { return request("GET", "/diagnostic/items"); },

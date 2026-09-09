@@ -416,11 +416,11 @@ export async function reportProgress(id, userId, reportText, usefulnessRating) {
   return rows[0] || null;
 }
 
-export async function mentorRateProgress(id, mentorId, mentorRating) {
+export async function mentorRateProgress(id, mentorId, mentorRating, mentorFeedback = "", requestRevision = false) {
   const { rows } = await query(
-    `UPDATE roadmap_progress SET status = 'rated', mentor_rating = $1, updated_at = now()
-     WHERE id = $2 AND user_id IN (SELECT id FROM users WHERE mentor_id = $3 AND mentor_status = 'confirmed') RETURNING *`,
-    [mentorRating, id, mentorId]
+    `UPDATE roadmap_progress SET status = $1, mentor_rating = $2, mentor_feedback = $3, updated_at = now()
+     WHERE id = $4 AND user_id IN (SELECT id FROM users WHERE mentor_id = $5 AND mentor_status = 'confirmed') RETURNING *`,
+    [requestRevision ? "reported" : "rated", requestRevision ? null : mentorRating, String(mentorFeedback || "").trim().slice(0, 3000), id, mentorId]
   );
   return rows[0] || null;
 }

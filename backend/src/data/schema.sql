@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS roadmap_progress (
   report_text TEXT,               -- «Что узнал нового? Что будет использовать в работе?» (гл. 3.2)
   usefulness_rating SMALLINT CHECK (usefulness_rating BETWEEN 1 AND 5), -- наставляемый оценивает мероприятие
   mentor_rating SMALLINT CHECK (mentor_rating BETWEEN 1 AND 5),          -- наставник оценивает отчёт
+  mentor_feedback TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

@@ -181,7 +181,7 @@
     async addPortfolioItem(item) { const data = await request("POST", "/ai/portfolio/items", item); return data.item; },
     async deletePortfolioItem(id) { return request("DELETE", "/ai/portfolio/items/" + id); },
     async downloadPortfolioPdf() { return download("/ai/portfolio/pdf", "Портфолио.pdf"); },
-    async mentorRateProgress(id, mentorRating) { const data = await request("POST", `/ai/roadmap/progress/${id}/mentor-rate`, { mentorRating }); return data.progress; },
+    async mentorRateProgress(id, mentorRating, mentorFeedback, decision = "approve") { const data = await request("POST", `/ai/roadmap/progress/${id}/mentor-rate`, { mentorRating, mentorFeedback, decision }); return data.progress; },
     async menteeReports() { const data = await request("GET", "/ai/roadmap/progress/mentees"); return data.progress; },
     async getMenteeRoadmap(userId) { const data = await request("GET", `/ai/roadmap/mentee/${userId}`); return data.workflow; },
     async saveMenteeRoadmap(userId, payload) { const data = await request("PUT", `/ai/roadmap/mentee/${userId}`, payload); return data.roadmap; },

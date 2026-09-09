@@ -207,6 +207,7 @@ export async function initSchema() {
     await pgPool.query("ALTER TABLE roadmaps ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()");
     await pgPool.query("ALTER TABLE roadmaps ADD COLUMN IF NOT EXISTS sources JSONB NOT NULL DEFAULT '[]'");
     await pgPool.query("ALTER TABLE roadmaps ADD COLUMN IF NOT EXISTS search_status JSONB NOT NULL DEFAULT '{}'");
+    await pgPool.query("ALTER TABLE roadmap_progress ADD COLUMN IF NOT EXISTS mentor_feedback TEXT");
   } else {
     const columns = sqlite.prepare("PRAGMA table_info(message_attachments)").all();
     if (!columns.some((column) => column.name === "data_bytes")) {
@@ -229,6 +230,8 @@ export async function initSchema() {
     for (const [name, sql] of roadmapMigrations) {
       if (!roadmapColumns.some((column) => column.name === name)) sqlite.exec(sql);
     }
+    const progressColumns = sqlite.prepare("PRAGMA table_info(roadmap_progress)").all();
+    if (!progressColumns.some((column) => column.name === "mentor_feedback")) sqlite.exec("ALTER TABLE roadmap_progress ADD COLUMN mentor_feedback TEXT");
   }
 }
 

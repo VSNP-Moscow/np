@@ -175,9 +175,13 @@ router.post("/roadmap/progress/:id/report", requireAuth, async (req, res) => {
 // Наставник оценивает отчёт наставляемого — здесь и происходит "ручная корректировка" со стороны человека.
 router.post("/roadmap/progress/:id/mentor-rate", requireAuth, requireRole("mentor"), async (req, res) => {
   const rating = Math.max(1, Math.min(5, parseInt(req.body?.mentorRating, 10) || 3));
-  const item = await mentorRateProgress(req.params.id, req.user.id, rating);
+  const requestRevision = req.body?.decision === "revision";
+  const feedback = String(req.body?.mentorFeedback || "").trim();
+  if (requestRevision && !feedback) return res.status(400).json({ error: "Напишите, что педагог должен доработать" });
+  const item = await mentorRateProgress(req.params.id, req.user.id, rating, feedback, requestRevision);
   if (!item) return res.status(404).json({ error: "Не найдено или не ваш наставляемый" });
-  if (rating >= 4) await awardCoins(item.user_id, REWARDS.ROADMAP_PROGRESS_RATED_BONUS, "Наставник высоко оценил отчёт");
+  if (!requestRevision && rating >= 4) await awardCoins(item.user_id, REWARDS.ROADMAP_PROGRESS_RATED_BONUS, "Наставник высоко оценил отчёт");
+  await createNotification(item.user_id, "report", requestRevision ? "Отчёт нужно доработать" : "Наставник проверил отчёт", feedback || (requestRevision ? "Откройте отчёт и дополните его." : `Оценка наставника: ${rating}/5`), "#/roadmap");
   res.json({ progress: item });
 });
 

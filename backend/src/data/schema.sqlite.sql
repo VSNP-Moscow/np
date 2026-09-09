@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS roadmap_progress (
   report_text TEXT,
   usefulness_rating INTEGER CHECK (usefulness_rating BETWEEN 1 AND 5),
   mentor_rating INTEGER CHECK (mentor_rating BETWEEN 1 AND 5),
+  mentor_feedback TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

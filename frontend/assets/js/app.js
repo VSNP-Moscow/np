@@ -820,6 +820,7 @@
     if (existing.report_text) modal.appendChild(el("p", { style: "font-size:13.5px; color:var(--ink-soft); margin-bottom:8px;" }, [existing.report_text]));
     if (existing.usefulness_rating) modal.appendChild(el("p", { style: "font-size:12.5px; color:var(--ink-faint);" }, [`Ваша оценка полезности: ${existing.usefulness_rating}/5`]));
     if (existing.mentor_rating) modal.appendChild(el("p", { style: "font-size:12.5px; color:var(--ink-faint);" }, [`Оценка наставника: ${existing.mentor_rating}/5`]));
+    if (existing.mentor_feedback) modal.appendChild(el("div", { class: "mentor-feedback-note" }, [el("b", {}, ["Обратная связь наставника"]), el("p", {}, [existing.mentor_feedback])]));
     if (ev.url) modal.appendChild(el("a", { href: ev.url, target: "_blank", rel: "noopener", style: "display:block; margin-top:8px; font-size:12.5px; color:var(--purple-ink); font-weight:700;" }, ["Открыть источник →"]));
     const close = el("button", { class: "btn btn-ghost btn-sm", style: "margin-top:14px;" }, ["Закрыть"]);
     close.addEventListener("click", () => backdrop.remove());
@@ -872,9 +873,12 @@
   // Наставляемый берёт мероприятие в работу и сразу может написать отчёт (или сохранить как "в работе" и вернуться позже).
   async function openQuizModal(ev) {
     const backdrop = el("div", { class: "modal-backdrop" });
-    const modal = el("div", { class: "modal" }, [
-      el("h3", { style: "margin-bottom:4px;" }, ["🧠 Тест: " + ev.title]),
-      el("p", { style: "font-size:12px; color:var(--ink-faint); margin-bottom:14px;" }, ["Вопросы сгенерированы ИИ на основе мероприятия и методических рекомендаций."]),
+    const modal = el("div", { class: "modal quiz-modal" }, [
+      el("div", { class: "quiz-loading" }, [
+        el("span", { class: "quiz-kicker" }, ["ПРОВЕРКА РЕЗУЛЬТАТА"]),
+        el("h3", {}, ["Загрузка теста"]),
+        el("p", {}, ["Подбираем вопросы по материалам мероприятия"]),
+      ]),
       el("div", { class: "typing-dots" }, [el("span"), el("span"), el("span")]),
     ]);
     backdrop.appendChild(modal);
@@ -884,44 +888,82 @@
     let data;
     try { data = await API.getQuiz(ev.id); } catch (e) { modal.querySelector(".typing-dots").replaceWith(el("p", {}, ["Не удалось загрузить тест."])); return; }
 
-    modal.innerHTML = "";
-    modal.appendChild(el("h3", { style: "margin-bottom:4px;" }, ["🧠 Тест: " + ev.title]));
-    modal.appendChild(el("div", { class: "mode-badge " + (data.mode === "live" ? "live" : "offline"), style: "margin-bottom:14px;" }, [data.mode === "live" ? "✅ По материалам мероприятия" : "⚠️ Общий тест по компетенции"]));
+    const questions = data.questions || [];
+    const answers = Array(questions.length).fill(-1);
+    let current = 0;
 
-    const inputs = [];
-    data.questions.forEach((q, qi) => {
-      const block = el("div", { style: "margin-bottom:16px;" }, [el("p", { style: "font-weight:700; font-size:13.5px; margin-bottom:8px;" }, [`${qi + 1}. ${q.q}`])]);
-      const group = [];
-      q.options.forEach((opt, oi) => {
-        const label = el("label", { style: "display:flex; gap:8px; align-items:center; font-size:13px; padding:6px 0; cursor:pointer;" });
-        const radio = document.createElement("input");
-        radio.type = "radio"; radio.name = "q" + qi; radio.value = String(oi);
-        label.appendChild(radio); label.appendChild(document.createTextNode(opt));
-        block.appendChild(label);
-        group.push(radio);
-      });
-      inputs.push(group);
-      modal.appendChild(block);
-    });
-
-    const submit = el("button", { class: "btn btn-primary btn-sm" }, ["Проверить"]);
-    submit.addEventListener("click", async () => {
-      const answers = inputs.map(group => { const picked = group.find(r => r.checked); return picked ? parseInt(picked.value, 10) : -1; });
-      const result = await API.submitQuiz(ev.id, answers);
+    function renderQuestion() {
       modal.innerHTML = "";
-      modal.appendChild(el("h3", { style: "margin-bottom:10px;" }, [`Результат: ${result.score} из ${result.total}`]));
-      result.details.forEach((d, i) => {
-        const ok = d.yourAnswer === d.correctIndex;
-        modal.appendChild(el("div", { style: "margin-bottom:12px; padding:10px; border-radius:10px; background:" + (ok ? "var(--green-pastel)" : "var(--yellow-pastel)") }, [
-          el("p", { style: "font-weight:700; font-size:13px; margin-bottom:4px;" }, [(ok ? "✅ " : "❌ ") + d.q]),
-          el("p", { style: "font-size:12px; color:var(--ink-soft);" }, [d.explain]),
-        ]));
+      const header = el("div", { class: "quiz-header" }, [
+        el("div", {}, [el("span", { class: "quiz-kicker" }, ["ПРОВЕРКА РЕЗУЛЬТАТА"]), el("h3", {}, [ev.title]), el("p", { class: "quiz-subtitle" }, ["Ответьте на вопросы и закрепите главное из мероприятия."])]),
+        el("button", { class: "icon-btn quiz-close", type: "button", title: "Закрыть тест" }, ["×"]),
+      ]);
+      header.querySelector(".quiz-close").addEventListener("click", () => backdrop.remove());
+      modal.appendChild(header);
+      const progress = el("div", { class: "quiz-progress" }, [
+        el("div", { class: "quiz-progress-meta" }, [el("span", {}, [`Вопрос ${current + 1} из ${questions.length}`]), el("b", {}, [`${Math.round(((current + 1) / questions.length) * 100)}%`])]),
+        el("div", { class: "quiz-progress-track" }, [el("div", { style: `width:${((current + 1) / questions.length) * 100}%;` })]),
+      ]);
+      modal.appendChild(progress);
+
+      const layout = el("div", { class: "quiz-layout" });
+      const rail = el("aside", { class: "quiz-rail" }, [el("span", {}, ["Ваши ответы"])]);
+      questions.forEach((q, index) => {
+        const item = el("button", { class: "quiz-rail-item" + (index === current ? " active" : "") + (answers[index] >= 0 ? " answered" : ""), type: "button", title: `Вопрос ${index + 1}` }, [String(index + 1)]);
+        item.addEventListener("click", () => { current = index; renderQuestion(); });
+        rail.appendChild(item);
       });
-      const close = el("button", { class: "btn btn-ghost btn-sm" }, ["Закрыть"]);
+      layout.appendChild(rail);
+      const q = questions[current];
+      const panel = el("main", { class: "quiz-question" }, [
+        el("span", { class: "quiz-question-label" }, ["ВОПРОС " + String(current + 1).padStart(2, "0")]),
+        el("h4", {}, [q.q]),
+        el("p", { class: "quiz-hint" }, ["Выберите один вариант ответа"]),
+      ]);
+      const options = el("div", { class: "quiz-options" });
+      (q.options || []).forEach((option, index) => {
+        const choice = el("button", { class: "quiz-option" + (answers[current] === index ? " selected" : ""), type: "button" }, [
+          el("span", { class: "quiz-option-letter" }, [String.fromCharCode(65 + index)]),
+          el("span", { class: "quiz-option-text" }, [option]),
+          el("span", { class: "quiz-option-check" }, [answers[current] === index ? "✓" : ""]),
+        ]);
+        choice.addEventListener("click", () => { answers[current] = index; renderQuestion(); });
+        options.appendChild(choice);
+      });
+      panel.appendChild(options);
+      const footer = el("div", { class: "quiz-footer" });
+      const previousAttrs = { class: "btn btn-ghost", type: "button" };
+      if (current === 0) previousAttrs.disabled = "disabled";
+      const previous = el("button", previousAttrs, ["← Назад"]);
+      if (current > 0) previous.addEventListener("click", () => { current -= 1; renderQuestion(); });
+      const next = current === questions.length - 1
+        ? el("button", { class: "btn btn-primary", type: "button" }, ["Завершить тест"])
+        : el("button", { class: "btn btn-primary", type: "button" }, ["Следующий вопрос →"]);
+      next.addEventListener("click", async () => {
+        if (answers[current] < 0) { toast("Выберите вариант ответа", true); return; }
+        if (current < questions.length - 1) { current += 1; renderQuestion(); return; }
+        next.disabled = true; next.textContent = "Проверяем…";
+        try { renderQuizResult(await API.submitQuiz(ev.id, answers)); } catch (e) { apiErr(e); next.disabled = false; next.textContent = "Повторить"; }
+      });
+      footer.appendChild(previous); footer.appendChild(next); panel.appendChild(footer);
+      layout.appendChild(panel); modal.appendChild(layout);
+    }
+
+    function renderQuizResult(result) {
+      modal.innerHTML = "";
+      const percent = result.total ? Math.round((result.score / result.total) * 100) : 0;
+      const close = el("button", { class: "icon-btn quiz-close", type: "button", title: "Закрыть результат" }, ["×"]);
       close.addEventListener("click", () => backdrop.remove());
-      modal.appendChild(close);
-    });
-    modal.appendChild(submit);
+      modal.appendChild(el("div", { class: "quiz-result-head" }, [close, el("span", { class: "quiz-kicker" }, ["ТЕСТ ЗАВЕРШЁН"]), el("h3", {}, [percent >= 70 ? "Отличный результат" : "Есть что закрепить"]), el("p", {}, [`${result.score} из ${result.total} правильных ответов`]), el("div", { class: "quiz-score" }, [el("b", {}, [String(percent)]), el("span", {}, ["%"])]), el("p", { class: "quiz-result-note" }, [percent >= 70 ? "Вы хорошо усвоили ключевые идеи мероприятия." : "Вернитесь к материалам мероприятия и обсудите сложные вопросы с наставником."])]));
+      const details = el("div", { class: "quiz-result-list" });
+      result.details.forEach((detail) => details.appendChild(el("div", { class: "quiz-result-item " + (detail.yourAnswer === detail.correctIndex ? "correct" : "wrong") }, [el("span", { class: "quiz-result-mark" }, [detail.yourAnswer === detail.correctIndex ? "✓" : "!" ]), el("div", {}, [el("b", {}, [detail.q]), el("p", {}, [detail.explain])])] )));
+      modal.appendChild(details);
+      const done = el("button", { class: "btn btn-primary quiz-result-close", type: "button" }, ["Вернуться к мероприятиям"]);
+      done.addEventListener("click", () => backdrop.remove()); modal.appendChild(done);
+    }
+
+    if (!questions.length) { modal.innerHTML = ""; modal.appendChild(el("p", {}, ["Вопросы для этого мероприятия пока недоступны."])); return; }
+    renderQuestion();
   }
 
   async function openProgressReportModal(competencyId, ev) {
@@ -1352,26 +1394,28 @@
     topbar(main, "🎓 Мои педагоги", `${mentees.length} подопечных`);
 
     const reports = await API.menteeReports();
-    if (reports.length) {
-      const rCard = el("div", { class: "card", style: "margin-bottom:18px; border-color:var(--yellow-pastel-2);" }, [el("div", { class: "card-title" }, [`📝 Отчёты на проверку (${reports.length})`])]);
-      reports.forEach(r => {
-        const row = el("div", { style: "padding:10px 0; border-bottom:1px solid var(--border);" }, [
-          el("div", { style: "font-weight:700; font-size:13.5px;" }, [r.mentee_name + " — " + r.event_title]),
-          el("div", { style: "font-size:12.5px; color:var(--ink-soft); margin:4px 0;" }, [r.report_text || "(без текста)"]),
-          el("div", { style: "font-size:12px; color:var(--ink-faint);" }, ["Полезность по мнению педагога: " + (r.usefulness_rating || "—") + "/5"]),
-        ]);
-        const rateRow = el("div", { style: "display:flex; gap:8px; align-items:center; margin-top:6px;" });
-        const sel = document.createElement("select");
-        [1, 2, 3, 4, 5].forEach(v => sel.appendChild(new Option(String(v), v, v === 5, v === 5)));
-        sel.style.cssText = "padding:6px 10px; border-radius:8px; border:1.5px solid var(--border);";
-        const btn = el("button", { class: "btn btn-primary btn-sm" }, ["Оценить"]);
-        btn.addEventListener("click", async () => { await API.mentorRateProgress(r.id, parseInt(sel.value, 10)); renderMain(); toast("Оценка сохранена"); });
-        rateRow.appendChild(sel); rateRow.appendChild(btn);
-        row.appendChild(rateRow);
-        rCard.appendChild(row);
-      });
-      main.appendChild(rCard);
-    }
+    const reviewSection = el("section", { class: "mentor-review-section" }, [
+      el("div", { class: "section-inline-head" }, [el("div", {}, [el("h2", {}, ["Проверка отчётов"]), el("p", {}, [reports.length ? `${reports.length} отчёта ждут вашего решения` : "Очередь пуста · новые отчёты появятся после мероприятий"])])])
+    ]);
+    if (!reports.length) reviewSection.appendChild(el("div", { class: "review-empty" }, [el("span", {}, ["✓"]), el("div", {}, [el("b", {}, ["Все отчёты проверены"]), el("p", {}, ["Здесь можно поставить оценку, написать обратную связь или вернуть отчёт педагогу на доработку."])])]));
+    reports.forEach(r => {
+      const row = el("div", { class: "report-review-row" }, [
+        el("div", { class: "report-review-head" }, [el("div", {}, [el("b", {}, [r.mentee_name]), el("span", {}, [r.event_title])]), el("span", { class: "report-status" }, ["На проверке"])]),
+        el("p", { class: "report-review-text" }, [r.report_text || "Педагог не добавил текст отчёта."]),
+        el("span", { class: "report-review-meta" }, ["Полезность по мнению педагога: " + (r.usefulness_rating || "—") + "/5"]),
+      ]);
+      const feedback = el("textarea", { class: "report-feedback", rows: "2", placeholder: "Обратная связь педагогу: что получилось и что улучшить" });
+      const rateRow = el("div", { class: "report-review-actions" });
+      const sel = document.createElement("select");
+      [1, 2, 3, 4, 5].forEach(v => sel.appendChild(new Option(String(v), v, v === 5, v === 5)));
+      const approve = el("button", { class: "btn btn-primary btn-sm" }, ["Принять отчёт"]);
+      const revise = el("button", { class: "btn btn-ghost btn-sm" }, ["Вернуть на доработку"]);
+      approve.addEventListener("click", async () => { try { await API.mentorRateProgress(r.id, parseInt(sel.value, 10), feedback.value.trim(), "approve"); toast("Отчёт принят"); await renderMain(); } catch (e) { apiErr(e); } });
+      revise.addEventListener("click", async () => { try { await API.mentorRateProgress(r.id, parseInt(sel.value, 10), feedback.value.trim(), "revision"); toast("Отчёт возвращён педагогу"); await renderMain(); } catch (e) { apiErr(e); } });
+      rateRow.appendChild(el("span", { class: "report-rate-label" }, ["Оценка"])); rateRow.appendChild(sel); rateRow.appendChild(approve); rateRow.appendChild(revise);
+      row.appendChild(feedback); row.appendChild(rateRow); reviewSection.appendChild(row);
+    });
+    main.appendChild(reviewSection);
 
     if (!mentees.length) { main.appendChild(emptyState("🎓", "Пока нет подопечных", "Педагоги появятся здесь после подтверждения заявки на наставничество.")); return; }
     const grid = el("div", { class: "grid-2" });
@@ -1435,6 +1479,16 @@
     const priorities = el("div", { class: "roadmap-priority-list" });
     (roadmap.priorities || []).forEach((priority) => priorities.appendChild(mentorPriorityEditor(priority)));
     form.appendChild(priorities);
+    const addEventBar = el("div", { class: "add-event-bar" }, [el("span", {}, ["Добавить мероприятие в план"])]);
+    const addCompetency = document.createElement("select");
+    API.COMPETENCIES.forEach((comp) => addCompetency.appendChild(new Option(`${comp.icon} ${comp.label}`, comp.id)));
+    const addEvent = el("button", { class: "btn btn-secondary btn-sm", type: "button" }, ["+ Добавить мероприятие"]);
+    addEvent.addEventListener("click", () => {
+      let block = $(`.roadmap-edit-block[data-competency="${addCompetency.value}"]`, priorities);
+      if (!block) { block = mentorPriorityEditor({ competency: addCompetency.value, score: mentee.scores?.[addCompetency.value] || 0, events: [] }); priorities.appendChild(block); }
+      const events = $(".roadmap-edit-events", block); events.appendChild(mentorEventEditor({})); events.lastElementChild.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    addEventBar.appendChild(addCompetency); addEventBar.appendChild(addEvent); form.appendChild(addEventBar);
 
     const commentLabel = el("label", { class: "editor-field wide" }, [el("span", {}, ["Комментарий наставника педагогу и ИИ"])]);
     const comment = el("textarea", { rows: "3", placeholder: "Что принято, что изменить и на что обратить внимание" });

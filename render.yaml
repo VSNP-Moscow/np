@@ -25,3 +25,7 @@ services:
         generateValue: true
       - key: CRON_SECRET
         generateValue: true
+      - key: BREVO_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false

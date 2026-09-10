@@ -17,9 +17,20 @@ export function emailCodeExpiry(purpose) {
 }
 
 export function mailConfigured() {
+  const status = mailProviderStatus();
   const senderConfigured = Boolean(process.env.MAIL_FROM);
-  const httpConfigured = Boolean(process.env.MAIL_RELAY_URL && process.env.MAIL_RELAY_SECRET) || Boolean(process.env.BREVO_API_KEY);
+  const httpConfigured = status.relay || status.brevo;
   return senderConfigured && (httpConfigured || hasSmtpConfiguration());
+}
+
+export function mailProviderStatus() {
+  return {
+    relay: Boolean(process.env.MAIL_RELAY_URL && process.env.MAIL_RELAY_SECRET),
+    relayUrl: Boolean(process.env.MAIL_RELAY_URL),
+    relaySecret: Boolean(process.env.MAIL_RELAY_SECRET),
+    smtp: hasSmtpConfiguration(),
+    brevo: Boolean(process.env.BREVO_API_KEY),
+  };
 }
 
 function hasSmtpConfiguration() {

@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
 import { query, mapUser } from "../db.js";
 import { signToken, requireAuth, requireRole } from "../middleware/auth.js";
-import { createEmailCode, emailCodeExpiry, hashEmailCode, mailConfigured, sendAccountCode } from "../services/email.js";
+import { createEmailCode, emailCodeExpiry, hashEmailCode, mailConfigured, mailProviderStatus, sendAccountCode } from "../services/email.js";
 
 const router = Router();
 const AVATAR_COLORS = ["purple", "magenta", "yellow", "green"];
@@ -114,6 +114,10 @@ router.post("/mail-test", requireAuth, requireRole("admin"), codeLimiter, async 
   const delivery = await sendAccountCode({ to: email, code: createEmailCode(), purpose: "verify_email" });
   if (!delivery.sent) return res.status(503).json({ error: "SMTP не настроен" });
   res.json({ sent: true, provider: delivery.provider });
+});
+
+router.get("/mail-status", requireAuth, requireRole("admin"), (req, res) => {
+  res.json(mailProviderStatus());
 });
 
 router.post("/login", async (req, res) => {

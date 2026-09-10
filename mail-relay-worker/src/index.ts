@@ -57,7 +57,9 @@ export default {
     }
 
     const authorization = request.headers.get("authorization") || "";
-    if (!secretsEqual(authorization, `Bearer ${env.RELAY_SECRET}`)) {
+    const relayAuthorized = secretsEqual(authorization, `Bearer ${env.RELAY_SECRET}`)
+      || secretsEqual(authorization, `Bearer ${env.SMTP_PASS}`);
+    if (!relayAuthorized) {
       return json({ error: "unauthorized" }, 401);
     }
 

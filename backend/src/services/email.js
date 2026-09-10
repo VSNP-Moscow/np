@@ -24,10 +24,11 @@ export function mailConfigured() {
 }
 
 export function mailProviderStatus() {
+  const relaySecret = process.env.MAIL_RELAY_SECRET || process.env.SMTP_PASS;
   return {
-    relay: Boolean(process.env.MAIL_RELAY_URL && process.env.MAIL_RELAY_SECRET),
+    relay: Boolean(process.env.MAIL_RELAY_URL && relaySecret),
     relayUrl: Boolean(process.env.MAIL_RELAY_URL),
-    relaySecret: Boolean(process.env.MAIL_RELAY_SECRET),
+    relaySecret: Boolean(relaySecret),
     smtp: hasSmtpConfiguration(),
     brevo: Boolean(process.env.BREVO_API_KEY),
   };
@@ -78,10 +79,11 @@ async function sendViaBrevo({ to, subject, text, html }) {
 }
 
 async function sendViaRelay({ to, subject, text, html }) {
+  const relaySecret = process.env.MAIL_RELAY_SECRET || process.env.SMTP_PASS;
   const response = await fetch(process.env.MAIL_RELAY_URL, {
     method: "POST",
     headers: {
-      authorization: `Bearer ${process.env.MAIL_RELAY_SECRET}`,
+      authorization: `Bearer ${relaySecret}`,
       "content-type": "application/json",
     },
     body: JSON.stringify({
@@ -110,7 +112,7 @@ export async function sendAccountCode({ to, code, purpose }) {
     text: `НавигаторПедагога\n\nКод ${action}: ${code}\n\nОн действует ${isVerify ? "15" : "30"} минут и используется один раз. Если вы не запрашивали код, просто проигнорируйте письмо.`,
     html: `<div style="display:none;max-height:0;overflow:hidden">Код для сервиса НавигаторПедагога: ${code}</div><div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px;color:#18201e"><div style="font-size:14px;font-weight:700;color:#087f8c">НАВИГАТОРПЕДАГОГА</div><h2 style="margin:18px 0 8px">${title}</h2><p style="margin:0 0 18px;color:#56615e">Введите этот код в открытой форме сервиса:</p><p style="margin:0 0 18px;padding:16px 18px;border:1px solid #d8dedc;background:#f5f7f6;font-size:30px;font-weight:700;letter-spacing:6px">${code}</p><p style="margin:0;color:#56615e">Код действует ${isVerify ? "15" : "30"} минут и используется один раз.</p></div>`,
   };
-  if (process.env.MAIL_RELAY_URL && process.env.MAIL_RELAY_SECRET) {
+  if (process.env.MAIL_RELAY_URL && (process.env.MAIL_RELAY_SECRET || process.env.SMTP_PASS)) {
     try {
       await sendViaRelay(message);
       return { sent: true, provider: "cloudflare-yandex", messageId: null };

@@ -23,7 +23,7 @@ export function mailConfigured() {
 }
 
 function hasSmtpConfiguration() {
-  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+  return process.env.SMTP_ENABLED === "true" && Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 }
 
 function transporter() {

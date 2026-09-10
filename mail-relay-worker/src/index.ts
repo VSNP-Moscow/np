@@ -89,7 +89,7 @@ export default {
           port: 465,
           secure: true,
           startTls: false,
-          authType: "plain",
+          authType: "login",
           credentials: { username: env.SMTP_USER, password: env.SMTP_PASS },
           logLevel: LogLevel.ERROR,
           socketTimeoutMs: 15_000,

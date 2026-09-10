@@ -1,5 +1,16 @@
 PRAGMA foreign_keys = ON;
 
+CREATE TABLE IF NOT EXISTS organizations (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  name TEXT UNIQUE NOT NULL,
+  short_name TEXT,
+  region TEXT,
+  domain TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
   full_name TEXT NOT NULL,
@@ -16,12 +27,42 @@ CREATE TABLE IF NOT EXISTS users (
   approved_by_admin INTEGER NOT NULL DEFAULT 0,
   scores TEXT NOT NULL DEFAULT '{"subject":0,"pedagogy":0,"method":0,"digital":0,"communication":0,"personal":0}',
   avatar_color TEXT DEFAULT 'purple',
+  email_verified INTEGER NOT NULL DEFAULT 1,
+  organization_id TEXT REFERENCES organizations(id) ON DELETE SET NULL,
+  avatar_mime TEXT,
+  avatar_bytes BLOB,
+  avatar_updated_at TEXT,
   coins INTEGER NOT NULL DEFAULT 0,
   xp INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_users_mentor_id ON users(mentor_id);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+
+CREATE TABLE IF NOT EXISTS email_tokens (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  purpose TEXT NOT NULL CHECK (purpose IN ('verify_email', 'reset_password')),
+  code_hash TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_email_tokens_lookup ON email_tokens(user_id, purpose, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS organization_themes (
+  organization_id TEXT PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+  product_name TEXT NOT NULL DEFAULT 'НавигаторПедагога',
+  primary_color TEXT NOT NULL DEFAULT '#5b35d5',
+  accent_color TEXT NOT NULL DEFAULT '#d52d75',
+  surface_color TEXT NOT NULL DEFAULT '#ffffff',
+  font_scale REAL NOT NULL DEFAULT 1,
+  compact_mode INTEGER NOT NULL DEFAULT 0,
+  welcome_text TEXT DEFAULT '',
+  updated_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
 CREATE TABLE IF NOT EXISTS diagnostic_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

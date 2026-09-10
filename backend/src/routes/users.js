@@ -5,6 +5,8 @@ import { cacheInvalidate } from "../cache.js";
 import { createNotification } from "../services/notifications.js";
 
 const router = Router();
+const AVATAR_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 
 router.put("/me", requireAuth, async (req, res) => {
   const { fullName, subject, school, region, yearsExperience } = req.body || {};
@@ -20,6 +22,38 @@ router.put("/me", requireAuth, async (req, res) => {
   values.push(req.user.id);
   const { rows } = await query(`UPDATE users SET ${fields.join(", ")} WHERE id = $${i} RETURNING *`, values);
   res.json({ user: mapUser(rows[0]) });
+});
+
+router.put("/me/avatar", requireAuth, async (req, res) => {
+  const mime = String(req.body?.mime || "").toLowerCase();
+  const encoded = String(req.body?.dataBase64 || "").replace(/^data:[^;]+;base64,/, "");
+  if (!AVATAR_TYPES.has(mime)) return res.status(400).json({ error: "Разрешены изображения JPEG, PNG и WebP" });
+  let bytes;
+  try { bytes = Buffer.from(encoded, "base64"); } catch { return res.status(400).json({ error: "Повреждённое изображение" }); }
+  if (!bytes.length || bytes.length > MAX_AVATAR_BYTES) return res.status(400).json({ error: "Размер фотографии должен быть не более 2 МБ" });
+  const signatures = {
+    "image/jpeg": bytes[0] === 0xff && bytes[1] === 0xd8,
+    "image/png": bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
+    "image/webp": bytes.subarray(0, 4).toString() === "RIFF" && bytes.subarray(8, 12).toString() === "WEBP",
+  };
+  if (!signatures[mime]) return res.status(400).json({ error: "Содержимое файла не соответствует формату" });
+  const { rows } = await query("UPDATE users SET avatar_mime=$1, avatar_bytes=$2, avatar_updated_at=CURRENT_TIMESTAMP WHERE id=$3 RETURNING *", [mime, bytes, req.user.id]);
+  res.json({ user: mapUser(rows[0]) });
+});
+
+router.delete("/me/avatar", requireAuth, async (req, res) => {
+  const { rows } = await query("UPDATE users SET avatar_mime=NULL, avatar_bytes=NULL, avatar_updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING *", [req.user.id]);
+  res.json({ user: mapUser(rows[0]) });
+});
+
+router.get("/:id/avatar", async (req, res) => {
+  const { rows } = await query("SELECT avatar_mime, avatar_bytes, avatar_updated_at FROM users WHERE id=$1", [req.params.id]);
+  const avatar = rows[0];
+  if (!avatar?.avatar_mime || !avatar?.avatar_bytes) return res.status(404).json({ error: "Фотография не найдена" });
+  const bytes = Buffer.isBuffer(avatar.avatar_bytes) ? avatar.avatar_bytes : Buffer.from(avatar.avatar_bytes);
+  res.setHeader("Content-Type", avatar.avatar_mime);
+  res.setHeader("Cache-Control", "private, max-age=86400");
+  res.send(bytes);
 });
 
 // list users by role — admins see everyone; mentors see their confirmed mentees;
@@ -68,6 +102,21 @@ router.put("/:id/approval", requireAuth, requireRole("admin"), async (req, res) 
   const approved = req.body?.approved !== false;
   const { rows } = await query("UPDATE users SET approved_by_admin = $1 WHERE id = $2 RETURNING *", [approved, req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: "Не найден" });
+  res.json({ user: mapUser(rows[0]) });
+});
+
+router.put("/:id/admin", requireAuth, requireRole("admin"), async (req, res) => {
+  const { role, organizationId, approved } = req.body || {};
+  if (role && !["user", "mentor", "admin"].includes(role)) return res.status(400).json({ error: "Недопустимая роль" });
+  if (organizationId) {
+    const organization = await query("SELECT id FROM organizations WHERE id=$1", [organizationId]);
+    if (!organization.rows[0]) return res.status(400).json({ error: "Организация не найдена" });
+  }
+  const { rows } = await query(
+    "UPDATE users SET role=COALESCE($1,role), organization_id=$2, approved_by_admin=COALESCE($3,approved_by_admin) WHERE id=$4 RETURNING *",
+    [role || null, organizationId || null, approved === undefined ? null : Boolean(approved), req.params.id]
+  );
+  if (!rows[0]) return res.status(404).json({ error: "Пользователь не найден" });
   res.json({ user: mapUser(rows[0]) });
 });
 

@@ -40,6 +40,7 @@
     if (!res.ok) {
       const err = new Error((data && data.error) || `Ошибка сервера (${res.status})`);
       err.status = res.status;
+      err.code = data?.code;
       throw err;
     }
     return data;
@@ -90,11 +91,18 @@
       return data.user;
     },
     async register(payload) {
-      const data = await request("POST", "/auth/register", payload);
+      return request("POST", "/auth/register", payload);
+    },
+    async verifyEmail(email, code) {
+      const data = await request("POST", "/auth/verify-email", { email, code });
       TOKEN = data.token; CUR_USER = data.user;
       localStorage.setItem("np_token", TOKEN);
       return data.user;
     },
+    async resendVerification(email) { return request("POST", "/auth/resend-verification", { email }); },
+    async forgotPassword(email) { return request("POST", "/auth/forgot-password", { email }); },
+    async resetPassword(email, code, password) { return request("POST", "/auth/reset-password", { email, code, password }); },
+    async authOptions() { return request("GET", "/auth/options"); },
     async fetchMe() {
       if (!TOKEN) return null;
       try {
@@ -114,6 +122,15 @@
       CUR_USER = data.user;
       return CUR_USER;
     },
+    avatarUrl(user) { return user?.hasAvatar ? `${API_BASE}/users/${user.id}/avatar?v=${encodeURIComponent(user.avatarUpdatedAt || "")}` : ""; },
+    async uploadAvatar(dataBase64, mime) {
+      const data = await request("PUT", "/users/me/avatar", { dataBase64, mime });
+      CUR_USER = data.user; return CUR_USER;
+    },
+    async deleteAvatar() {
+      const data = await request("DELETE", "/users/me/avatar");
+      CUR_USER = data.user; return CUR_USER;
+    },
 
     // ---- users (admin/mentor) ----
     async listUsers(role) { const data = await request("GET", "/users" + (role ? "?role=" + role : "")); return data.users; },
@@ -122,9 +139,20 @@
     async setMentor(userId, mentorId) { const data = await request("PUT", `/users/${userId}/mentor`, { mentorId }); return data.user; },
     async setApproval(userId, approved) { const data = await request("PUT", `/users/${userId}/approval`, { approved }); return data.user; },
     async deleteUser(id) { return request("DELETE", "/users/" + id); },
+    async adminUpdateUser(id, payload) { const data = await request("PUT", `/users/${id}/admin`, payload); return data.user; },
     async requestMentor(mentorId) { const data = await request("POST", `/users/mentors/${mentorId}/request`); return data.user; },
     async confirmMentee(menteeId) { const data = await request("POST", `/users/mentees/${menteeId}/confirm`); return data.user; },
     async declineMentee(menteeId) { const data = await request("POST", `/users/mentees/${menteeId}/decline`); return data.user; },
+
+    // ---- organizations and visual themes ----
+    async listOrganizations() { const data = await request("GET", "/organizations"); return data.organizations; },
+    async createOrganization(payload) { const data = await request("POST", "/organizations", payload); return data.organization; },
+    async updateOrganization(id, payload) { const data = await request("PUT", `/organizations/${id}`, payload); return data.organization; },
+    async archiveOrganization(id) { return request("DELETE", `/organizations/${id}`); },
+    async getOrganizationTheme(id) { const data = await request("GET", `/organizations/${id}/theme`); return data.theme; },
+    async saveOrganizationTheme(id, payload) { const data = await request("PUT", `/organizations/${id}/theme`, payload); return data.theme; },
+    async organizationOverview(id) { const data = await request("GET", `/organizations/${id}/overview`); return data.overview; },
+    async listActivity(limit = 100) { const data = await request("GET", `/activity?limit=${limit}`); return data.activities; },
 
     // ---- events ----
     async listEvents(area, search) {

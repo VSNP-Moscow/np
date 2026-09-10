@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { initSchema, seedIfEmpty, databaseInfo } from "./db.js";
+import { initSchema, seedIfEmpty, databaseInfo, query } from "./db.js";
 import { hasApiKey, aiProviderInfo } from "./services/gemini.js";
 import authRoutes from "./routes/auth.js";
 import userRoutes from "./routes/users.js";
@@ -24,11 +24,13 @@ import notificationRoutes from "./routes/notifications.js";
 import fileRoutes from "./routes/files.js";
 import reportRoutes from "./routes/reports.js";
 import activityRoutes from "./routes/activity.js";
-import { query } from "./db.js";
+import organizationRoutes from "./routes/organizations.js";
+import { mailConfigured } from "./services/email.js";
 import crypto from "node:crypto";
 
 await initSchema();
 await seedIfEmpty();
+await query("UPDATE users SET organization_id=(SELECT id FROM organizations ORDER BY created_at LIMIT 1) WHERE organization_id IS NULL");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -64,7 +66,7 @@ const globalLimiter = rateLimit({ windowMs: 60_000, max: 240, standardHeaders: t
 app.use(globalLimiter);
 
 app.get("/api/health", (req, res) => {
-  res.json({ ok: true, liveAiMode: hasApiKey(), ...aiProviderInfo(), database: databaseInfo().driver, time: new Date().toISOString() });
+  res.json({ ok: true, liveAiMode: hasApiKey(), mailDelivery: mailConfigured(), ...aiProviderInfo(), database: databaseInfo().driver, time: new Date().toISOString() });
 });
 
 app.use("/api/auth", authRoutes);
@@ -82,6 +84,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/files", fileRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/activity", activityRoutes);
+app.use("/api/organizations", organizationRoutes);
 
 // При обычном запуске один Node-процесс раздаёт и API, и фронтенд.
 // Это позволяет опубликовать сервис одной бесплатной публичной ссылкой.

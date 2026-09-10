@@ -78,13 +78,29 @@
   function setAuthTab(tab) {
     $("#tabLogin").classList.toggle("active", tab === "login");
     $("#tabRegister").classList.toggle("active", tab === "register");
+    $(".auth-tabs").classList.toggle("hidden", !["login", "register"].includes(tab));
     $("#loginForm").classList.toggle("hidden", tab !== "login");
     $("#registerForm").classList.toggle("hidden", tab !== "register");
+    $("#verifyForm").classList.toggle("hidden", tab !== "verify");
+    $("#resetForm").classList.toggle("hidden", tab !== "reset");
     $("#authError").innerHTML = "";
   }
 
   function bindLanding() {
     renderLandingStatics();
+    API.authOptions().then((options) => {
+      const select = $("#regOrganization");
+      (options.organizations || []).forEach((organization) => select.appendChild(el("option", { value: organization.id }, [organization.name])));
+      select.addEventListener("change", () => {
+        const organization = options.organizations.find((item) => item.id === select.value);
+        if (organization?.region) $("#regRegion").value = organization.region;
+        if (organization?.name) {
+          const option = el("option", { value: organization.name });
+          $("#schoolOptions").appendChild(option);
+          $("#regSchool").value = organization.name;
+        }
+      });
+    }).catch(() => {});
     $("#btnOpenLogin").addEventListener("click", () => openAuth("login"));
     $("#btnOpenRegister").addEventListener("click", () => openAuth("register"));
     $("#btnHeroStart").addEventListener("click", () => openAuth("register"));
@@ -100,7 +116,13 @@
       try {
         await API.login($("#loginEmail").value.trim(), $("#loginPass").value);
         closeAuth(); await enterApp();
-      } catch (err) { $("#authError").innerHTML = `<div class="form-error">${esc(err.message)}</div>`; }
+      } catch (err) {
+        if (err.code === "EMAIL_NOT_VERIFIED") {
+          $("#verifyEmail").value = $("#loginEmail").value.trim();
+          setAuthTab("verify");
+        }
+        $("#authError").innerHTML = `<div class="form-error">${esc(err.message)}</div>`;
+      }
     });
 
     $("#registerForm").addEventListener("submit", async (e) => {
@@ -109,12 +131,59 @@
         fullName: $("#regName").value.trim(), email: $("#regEmail").value.trim(), password: $("#regPass").value,
         subject: $("#regSubject").value.trim(), yearsExperience: parseInt($("#regYears").value || "0", 10),
         school: $("#regSchool").value.trim(), region: $("#regRegion").value.trim(), role: $("#regRole").value,
+        organizationId: $("#regOrganization").value || null,
       };
-      if (payload.password.length < 4) { $("#authError").innerHTML = '<div class="form-error">Пароль должен быть не короче 4 символов.</div>'; return; }
+      if (payload.password.length < 8) { $("#authError").innerHTML = '<div class="form-error">Пароль должен быть не короче 8 символов.</div>'; return; }
       if (!payload.region) { $("#authError").innerHTML = '<div class="form-error">Укажите регион — по нему ИИ будет искать мероприятия.</div>'; return; }
       try {
-        await API.register(payload);
+        const result = await API.register(payload);
+        $("#verifyEmail").value = result.email;
+        if (result.debugCode) $("#verifyCode").value = result.debugCode;
+        setAuthTab("verify");
+        $("#authError").innerHTML = result.mailSent ? '<div class="form-success">Код отправлен на почту.</div>' : '<div class="form-error">Аккаунт создан, но отправка письма пока не настроена администратором.</div>';
+      } catch (err) { $("#authError").innerHTML = `<div class="form-error">${esc(err.message)}</div>`; }
+    });
+
+    $("#verifyForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        await API.verifyEmail($("#verifyEmail").value, $("#verifyCode").value.trim());
         closeAuth(); await enterApp();
+      } catch (err) { $("#authError").innerHTML = `<div class="form-error">${esc(err.message)}</div>`; }
+    });
+    $("#resendVerification").addEventListener("click", async () => {
+      try {
+        const result = await API.resendVerification($("#verifyEmail").value);
+        if (result.debugCode) $("#verifyCode").value = result.debugCode;
+        $("#authError").innerHTML = '<div class="form-success">Новый код создан и отправлен.</div>';
+      } catch (err) { $("#authError").innerHTML = `<div class="form-error">${esc(err.message)}</div>`; }
+    });
+
+    let resetCodeRequested = false;
+    $("#forgotPasswordLink").addEventListener("click", () => {
+      $("#resetEmail").value = $("#loginEmail").value.trim();
+      resetCodeRequested = false;
+      $("#resetCodeFields").classList.add("hidden");
+      $("#resetSubmit").textContent = "Получить код";
+      setAuthTab("reset");
+    });
+    $("#backToLogin").addEventListener("click", () => setAuthTab("login"));
+    $("#resetForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        if (!resetCodeRequested) {
+          const result = await API.forgotPassword($("#resetEmail").value.trim());
+          resetCodeRequested = true;
+          $("#resetCodeFields").classList.remove("hidden");
+          $("#resetSubmit").textContent = "Сохранить новый пароль";
+          if (result.debugCode) $("#resetCode").value = result.debugCode;
+          $("#authError").innerHTML = '<div class="form-success">Если аккаунт существует, код отправлен на почту.</div>';
+        } else {
+          await API.resetPassword($("#resetEmail").value.trim(), $("#resetCode").value.trim(), $("#resetNewPass").value);
+          setAuthTab("login");
+          $("#loginEmail").value = $("#resetEmail").value.trim();
+          $("#authError").innerHTML = '<div class="form-success">Пароль обновлён. Теперь можно войти.</div>';
+        }
       } catch (err) { $("#authError").innerHTML = `<div class="form-error">${esc(err.message)}</div>`; }
     });
   }
@@ -138,7 +207,10 @@
     ],
     admin: [
       { id: "dashboard", label: "Дашборд", icon: "🏠" }, { id: "users", label: "Педагоги и наставники", icon: "👥" },
-      { id: "events", label: "Мероприятия", icon: "📅" }, { id: "reports", label: "Отчёты", icon: "📊" },
+      { id: "organizations", label: "Организации и дизайн", icon: "🏫" },
+      { id: "groups", label: "Группы", icon: "👨‍👩‍👧‍👦" }, { id: "tests", label: "Тесты", icon: "🧩" },
+      { id: "assignments", label: "Задания", icon: "📮" }, { id: "events", label: "Мероприятия", icon: "📅" },
+      { id: "reports", label: "Отчёты", icon: "📊" }, { id: "activity", label: "Журнал действий", icon: "🧾" },
       { id: "notifications", label: "Уведомления", icon: "🔔" }, { id: "notes", label: "Заметки", icon: "📝" }, { id: "profile", label: "Профиль", icon: "⚙️" },
     ],
   };
@@ -158,6 +230,9 @@
     currentView = hash.split("/")[0] || "dashboard";
     currentSub = hash.split("/")[1] || null;
     const currentUser = API.getCurUser();
+    if (currentUser?.organizationId) {
+      try { applyOrganizationTheme(await API.getOrganizationTheme(currentUser.organizationId)); } catch {}
+    }
     if (currentUser?.role === "user" && !API.hasScores(currentUser)) {
       currentView = "assistant";
       currentSub = null;
@@ -171,6 +246,17 @@
     } catch (e) { AI_LIVE = false; }
     await renderShell();
     startNotificationPolling();
+  }
+
+  function applyOrganizationTheme(theme) {
+    if (!theme) return;
+    const root = document.documentElement;
+    root.style.setProperty("--purple", theme.primaryColor);
+    root.style.setProperty("--magenta", theme.accentColor);
+    root.style.setProperty("--surface", theme.surfaceColor);
+    root.style.fontSize = `${16 * Number(theme.fontScale || 1)}px`;
+    document.body.classList.toggle("compact-mode", Boolean(theme.compactMode));
+    document.title = theme.productName || "НавигаторПедагога";
   }
 
   function logout() {
@@ -281,7 +367,8 @@
   }
 
   function avatarNode(user, size) {
-    const a = el("div", { class: "avatar" + (size ? " " + size : "") }, [API.initials(user)]);
+    const children = user?.hasAvatar ? [el("img", { src: API.avatarUrl(user), alt: "" })] : [API.initials(user)];
+    const a = el("div", { class: "avatar" + (size ? " " + size : "") }, children);
     a.style.background = COLOR_HEX[user.avatarColor || "purple"];
     return a;
   }
@@ -316,6 +403,8 @@
       if (view === "tests") return await renderTestsView(main, user);
       if (view === "assignments") return await renderAssignmentsView(main, user);
       if (view === "users") return await renderUsersView(main, user);
+      if (view === "organizations") return await renderOrganizations(main, user);
+      if (view === "activity") return await renderActivity(main, user);
       if (view === "portfolio") return await renderPortfolio(main, user);
       if (view === "files") return await renderFiles(main, user);
       if (view === "reports") return await renderReports(main, user);
@@ -1924,7 +2013,7 @@
     }
     topbar(main, "👥 Педагоги и наставники");
     const chipRow = el("div", { class: "chip-row", style: "margin-bottom:18px;" });
-    [["user", "Педагоги"], ["mentor", "Наставники"]].forEach(([v, l]) => {
+    [["user", "Педагоги"], ["mentor", "Наставники"], ["admin", "Администраторы"]].forEach(([v, l]) => {
       const chip = el("button", { class: "chip" + (userRoleFilter === v ? " active" : "") }, [l]);
       chip.addEventListener("click", () => { userRoleFilter = v; renderMain(); });
       chipRow.appendChild(chip);
@@ -1962,6 +2051,21 @@
       main.appendChild(approvalCard);
     }
 
+    const accessCard = el("div", { class: "card" }, [el("div", { class: "card-title" }, ["Доступ и организация"])]);
+    const roleField = fieldSelect("Роль", [["user", "Молодой педагог"], ["mentor", "Наставник"], ["admin", "Администратор"]], u.role);
+    const organizationWrap = el("div", { class: "field" }, [el("label", {}, ["Организация"])]);
+    const organizationSelect = el("select");
+    organizationSelect.appendChild(new Option("Без организации", ""));
+    (await API.listOrganizations()).forEach((organization) => organizationSelect.appendChild(new Option(organization.name, organization.id, false, organization.id === u.organizationId)));
+    organizationWrap.appendChild(organizationSelect);
+    const accessSave = el("button", { class: "btn btn-primary btn-sm" }, ["Сохранить доступ"]);
+    accessSave.addEventListener("click", async () => {
+      await API.adminUpdateUser(u.id, { role: roleField.input.value, organizationId: organizationSelect.value || null, approved: u.approvedByAdmin });
+      toast("Права и организация обновлены"); renderMain();
+    });
+    accessCard.appendChild(roleField.wrap); accessCard.appendChild(organizationWrap); accessCard.appendChild(accessSave);
+    main.appendChild(accessCard);
+
     if (u.role === "user") {
       const mentorCard = el("div", { class: "card" }, [el("div", { class: "card-title" }, ["🤝 Наставник"])]);
       const sel = document.createElement("select");
@@ -1984,6 +2088,137 @@
     delBtn.addEventListener("click", async () => { if (confirm("Удалить " + u.fullName + "?")) { await API.deleteUser(u.id); go("users"); toast("Пользователь удалён"); } });
     delCard.appendChild(delBtn);
     main.appendChild(delCard);
+  }
+
+  /* =========================== ADMIN: ORGANIZATIONS =========================== */
+  let selectedOrganizationId = null;
+  async function renderOrganizations(main, admin) {
+    if (admin.role !== "admin") return;
+    const create = el("button", { class: "btn btn-primary btn-sm" }, ["+ Организация"]);
+    create.addEventListener("click", openOrganizationModal);
+    topbar(main, "Организации и дизайн", "Управление доступом, процессами и фирменным интерфейсом", [create]);
+    const organizations = await API.listOrganizations();
+    if (!organizations.length) {
+      main.appendChild(emptyState("🏫", "Организаций пока нет", "Добавьте первую образовательную организацию."));
+      return;
+    }
+    if (!selectedOrganizationId || !organizations.some((item) => item.id === selectedOrganizationId)) selectedOrganizationId = organizations[0].id;
+    const workspace = el("div", { class: "organization-workspace" });
+    const list = el("div", { class: "organization-list" });
+    organizations.forEach((organization) => {
+      const button = el("button", { class: "organization-item" + (organization.id === selectedOrganizationId ? " active" : "") }, [
+        el("b", {}, [organization.name]),
+        el("span", {}, [organization.region || "Регион не указан"]),
+        !organization.active ? el("small", {}, ["Архив"]) : null,
+      ]);
+      button.addEventListener("click", () => { selectedOrganizationId = organization.id; renderMain(); });
+      list.appendChild(button);
+    });
+    workspace.appendChild(list);
+
+    const organization = organizations.find((item) => item.id === selectedOrganizationId);
+    const [theme, overview] = await Promise.all([API.getOrganizationTheme(organization.id), API.organizationOverview(organization.id)]);
+    const editor = el("section", { class: "organization-editor" });
+    const organizationActions = el("div", { class: "organization-head-actions" });
+    const editOrganization = el("button", { class: "btn btn-secondary btn-sm" }, ["Редактировать"]);
+    editOrganization.addEventListener("click", () => openOrganizationModal(organization));
+    organizationActions.appendChild(editOrganization);
+    if (organization.active) {
+      const archiveOrganization = el("button", { class: "btn btn-danger btn-sm" }, ["В архив"]);
+      archiveOrganization.addEventListener("click", async () => {
+        if (!confirm("Перевести организацию в архив? Пользователи сохранятся.")) return;
+        await API.archiveOrganization(organization.id); toast("Организация перемещена в архив"); renderMain();
+      });
+      organizationActions.appendChild(archiveOrganization);
+    }
+    editor.appendChild(el("div", { class: "organization-editor-head" }, [
+      el("div", {}, [el("h2", {}, [organization.name]), el("p", {}, [organization.domain || "Домен не задан"])]),
+      organizationActions,
+    ]));
+    const metrics = el("div", { class: "process-metrics" });
+    [["Пользователи", overview.total], ["Педагоги", overview.teachers], ["Наставники", overview.mentors], ["Ожидают подтверждения", overview.pending], ["Карты развития", overview.roadmaps], ["Отчёты", overview.reports]].forEach(([label, value]) => {
+      metrics.appendChild(el("div", {}, [el("b", {}, [String(Number(value || 0))]), el("span", {}, [label])]));
+    });
+    editor.appendChild(metrics);
+    editor.appendChild(el("h3", { class: "section-heading" }, ["Визуальное оформление"]));
+
+    const form = el("div", { class: "theme-editor" });
+    const product = fieldInput("Название сервиса", theme.productName);
+    const welcome = fieldInput("Приветствие организации", theme.welcomeText, "textarea");
+    const colorGrid = el("div", { class: "theme-colors" });
+    const colorFields = [
+      ["Основной", "primaryColor"], ["Акцент", "accentColor"], ["Фон панелей", "surfaceColor"],
+    ].map(([label, key]) => {
+      const wrap = el("label", { class: "color-field" }, [el("span", {}, [label])]);
+      const input = el("input", { type: "color", value: theme[key], "aria-label": label });
+      wrap.appendChild(input); colorGrid.appendChild(wrap); return [key, input];
+    });
+    const scaleWrap = el("label", { class: "range-field" }, [el("span", {}, ["Масштаб текста"]), el("output", {}, [String(theme.fontScale)])]);
+    const scale = el("input", { type: "range", min: "0.9", max: "1.15", step: "0.05", value: String(theme.fontScale) });
+    scale.addEventListener("input", () => scaleWrap.querySelector("output").textContent = scale.value);
+    scaleWrap.appendChild(scale);
+    const compactLabel = el("label", { class: "toggle-field" }, [el("input", { type: "checkbox" }), el("span", {}, ["Компактный режим"])]);
+    compactLabel.querySelector("input").checked = theme.compactMode;
+    const preview = el("div", { class: "theme-preview" }, [el("small", {}, ["Предпросмотр"]), el("h3", {}, [theme.productName]), el("p", {}, [theme.welcomeText || "Рабочее пространство педагога"]), el("button", { type: "button" }, ["Основное действие"])]);
+    const updatePreview = () => {
+      const colors = Object.fromEntries(colorFields.map(([key, input]) => [key, input.value]));
+      preview.style.setProperty("--preview-primary", colors.primaryColor);
+      preview.style.setProperty("--preview-accent", colors.accentColor);
+      preview.style.background = colors.surfaceColor;
+      preview.querySelector("h3").textContent = product.input.value || "НавигаторПедагога";
+      preview.querySelector("p").textContent = welcome.input.value || "Рабочее пространство педагога";
+    };
+    product.input.addEventListener("input", updatePreview); welcome.input.addEventListener("input", updatePreview);
+    colorFields.forEach(([, input]) => input.addEventListener("input", updatePreview)); updatePreview();
+    const save = el("button", { class: "btn btn-primary" }, ["Опубликовать оформление"]);
+    save.addEventListener("click", async () => {
+      const colors = Object.fromEntries(colorFields.map(([key, input]) => [key, input.value]));
+      await API.saveOrganizationTheme(organization.id, { productName: product.input.value.trim(), welcomeText: welcome.input.value.trim(), ...colors, fontScale: Number(scale.value), compactMode: compactLabel.querySelector("input").checked });
+      toast("Оформление опубликовано");
+    });
+    form.appendChild(product.wrap); form.appendChild(welcome.wrap); form.appendChild(colorGrid); form.appendChild(scaleWrap); form.appendChild(compactLabel); form.appendChild(save);
+    editor.appendChild(el("div", { class: "theme-layout" }, [form, preview]));
+    workspace.appendChild(editor); main.appendChild(workspace);
+  }
+
+  function openOrganizationModal(existing) {
+    const backdrop = el("div", { class: "modal-backdrop" });
+    const card = el("div", { class: "modal-card" }, [el("h3", {}, [existing ? "Редактирование организации" : "Новая организация"])]);
+    const name = fieldInput("Полное название", existing?.name || "");
+    const shortName = fieldInput("Короткое название", existing?.shortName || "");
+    const region = fieldInput("Регион", existing?.region || "");
+    const domain = fieldInput("Домен почты", existing?.domain || "");
+    [name, shortName, region, domain].forEach((field) => card.appendChild(field.wrap));
+    const buttons = el("div", { class: "modal-actions" });
+    const cancel = el("button", { class: "btn btn-secondary" }, ["Отмена"]);
+    const save = el("button", { class: "btn btn-primary" }, [existing ? "Сохранить" : "Добавить"]);
+    cancel.addEventListener("click", () => backdrop.remove());
+    save.addEventListener("click", async () => {
+      try {
+        const payload = { name: name.input.value.trim(), shortName: shortName.input.value.trim(), region: region.input.value.trim(), domain: domain.input.value.trim(), active: existing?.active !== false };
+        const organization = existing ? await API.updateOrganization(existing.id, payload) : await API.createOrganization(payload);
+        selectedOrganizationId = organization.id; backdrop.remove(); renderMain();
+      } catch (error) { apiErr(error); }
+    });
+    buttons.appendChild(cancel); buttons.appendChild(save); card.appendChild(buttons); backdrop.appendChild(card); document.body.appendChild(backdrop);
+  }
+
+  async function renderActivity(main, user) {
+    if (user.role !== "admin") return;
+    topbar(main, "Журнал действий", "Изменения данных и административные операции");
+    const items = await API.listActivity(150);
+    if (!items.length) return main.appendChild(emptyState("🧾", "Действий пока нет", "Журнал заполнится после изменений в системе."));
+    const table = el("div", { class: "data-table activity-table" }, [
+      el("div", { class: "data-table-head" }, ["Пользователь", "Операция", "Раздел", "Статус", "Время"].map((value) => el("span", {}, [value]))),
+    ]);
+    items.forEach((item) => table.appendChild(el("div", { class: "data-table-row" }, [
+      el("span", { "data-label": "Пользователь" }, [item.userName || "Система"]),
+      el("b", { "data-label": "Операция" }, [item.method]),
+      el("span", { "data-label": "Раздел", class: "mono" }, [item.path]),
+      el("span", { "data-label": "Статус" }, [String(item.statusCode)]),
+      el("span", { "data-label": "Время" }, [new Date(item.createdAt).toLocaleString("ru-RU")]),
+    ])));
+    main.appendChild(table);
   }
 
   /* =========================== PORTFOLIO =========================== */
@@ -2169,6 +2404,26 @@
   async function renderProfile(main, user) {
     topbar(main, "⚙️ Профиль");
     const card = el("div", { class: "card" }, [el("div", { style: "display:flex; align-items:center; gap:14px; margin-bottom:18px;" }, [avatarNode(user, "lg"), el("div", {}, [el("h3", { style: "font-size:18px;" }, [user.fullName]), el("p", { style: "color:var(--ink-soft); font-size:13px;" }, [API.roleLabel(user.role) + " · " + user.email])])])]);
+    const photoControls = el("div", { class: "profile-photo-actions" });
+    const photoInput = el("input", { type: "file", accept: "image/jpeg,image/png,image/webp", class: "visually-hidden" });
+    const uploadPhoto = el("button", { class: "btn btn-secondary btn-sm", type: "button" }, ["Выбрать фото"]);
+    uploadPhoto.addEventListener("click", () => photoInput.click());
+    photoInput.addEventListener("change", async () => {
+      const file = photoInput.files?.[0];
+      if (!file) return;
+      if (file.size > 2 * 1024 * 1024) return toast("Фотография должна быть не более 2 МБ", true);
+      const dataBase64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1]); reader.onerror = reject; reader.readAsDataURL(file);
+      });
+      try { await API.uploadAvatar(dataBase64, file.type); toast("Фотография обновлена"); renderShell(); } catch (error) { apiErr(error); }
+    });
+    photoControls.appendChild(photoInput); photoControls.appendChild(uploadPhoto);
+    if (user.hasAvatar) {
+      const removePhoto = el("button", { class: "btn btn-danger btn-sm", type: "button" }, ["Удалить фото"]);
+      removePhoto.addEventListener("click", async () => { await API.deleteAvatar(); toast("Фотография удалена"); renderShell(); });
+      photoControls.appendChild(removePhoto);
+    }
+    card.appendChild(photoControls);
     const name = fieldInput("Полное имя", user.fullName);
     const subject = fieldInput("Предмет", user.subject);
     const school = fieldInput("Школа", user.school);

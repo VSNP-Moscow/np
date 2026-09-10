@@ -5,6 +5,17 @@
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto; -- для gen_random_uuid()
 
+CREATE TABLE IF NOT EXISTS organizations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT UNIQUE NOT NULL,
+  short_name TEXT,
+  region TEXT,
+  domain TEXT,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   full_name TEXT NOT NULL,
@@ -21,10 +32,40 @@ CREATE TABLE IF NOT EXISTS users (
   approved_by_admin BOOLEAN NOT NULL DEFAULT FALSE, -- регистрация подтверждается администратором (ТЗ п.4.3)
   scores JSONB NOT NULL DEFAULT '{"subject":0,"pedagogy":0,"method":0,"digital":0,"communication":0,"personal":0}',
   avatar_color TEXT DEFAULT 'purple',
+  email_verified BOOLEAN NOT NULL DEFAULT TRUE,
+  organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL,
+  avatar_mime TEXT,
+  avatar_bytes BYTEA,
+  avatar_updated_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_users_mentor_id ON users(mentor_id);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+
+CREATE TABLE IF NOT EXISTS email_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  purpose TEXT NOT NULL CHECK (purpose IN ('verify_email', 'reset_password')),
+  code_hash TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_email_tokens_lookup ON email_tokens(user_id, purpose, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS organization_themes (
+  organization_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+  product_name TEXT NOT NULL DEFAULT 'НавигаторПедагога',
+  primary_color TEXT NOT NULL DEFAULT '#5b35d5',
+  accent_color TEXT NOT NULL DEFAULT '#d52d75',
+  surface_color TEXT NOT NULL DEFAULT '#ffffff',
+  font_scale NUMERIC(3,2) NOT NULL DEFAULT 1,
+  compact_mode BOOLEAN NOT NULL DEFAULT FALSE,
+  welcome_text TEXT DEFAULT '',
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 -- Банк реальных диагностических вопросов (Раздел I-V диссертации Поляковой, шкала 1-3:
 -- 1 = испытываю затруднения, 2 = получается, но нужно совершенствование, 3 = получается хорошо).

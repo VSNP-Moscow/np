@@ -12,6 +12,13 @@ router.post("/", requireAuth, requireRole("mentor"), async (req, res) => {
 });
 
 router.get("/", requireAuth, async (req, res) => {
+  if (req.user.role === "admin") {
+    const { rows } = await query(
+      `SELECT g.*, COUNT(gm.user_id)::int AS member_count FROM groups g
+       LEFT JOIN group_members gm ON gm.group_id = g.id GROUP BY g.id ORDER BY g.created_at DESC`
+    );
+    return res.json({ groups: rows.map((r) => mapGroup(r, r.member_count)) });
+  }
   if (req.user.role === "mentor") {
     const { rows } = await query(
       `SELECT g.*, COUNT(gm.user_id)::int AS member_count FROM groups g
@@ -40,37 +47,40 @@ router.get("/:id", requireAuth, async (req, res) => {
     [req.params.id]
   );
   const isMember = members.some((m) => m.id === req.user.id);
-  if (!isOwner && !isMember) return res.status(403).json({ error: "Недостаточно прав" });
+  if (req.user.role !== "admin" && !isOwner && !isMember) return res.status(403).json({ error: "Недостаточно прав" });
   res.json({ group: mapGroup(g, members.length), members: members.map(mapUser) });
 });
 
 router.put("/:id", requireAuth, requireRole("mentor"), async (req, res) => {
   const { name, description } = req.body || {};
+  const admin = req.user.role === "admin";
   const { rows } = await query(
-    "UPDATE groups SET name = COALESCE($1,name), description = COALESCE($2,description) WHERE id = $3 AND mentor_id = $4 RETURNING *",
-    [name, description, req.params.id, req.user.id]
+    `UPDATE groups SET name = COALESCE($1,name), description = COALESCE($2,description) WHERE id = $3${admin ? "" : " AND mentor_id = $4"} RETURNING *`,
+    admin ? [name, description, req.params.id] : [name, description, req.params.id, req.user.id]
   );
   if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
   res.json({ group: mapGroup(rows[0]) });
 });
 
 router.delete("/:id", requireAuth, requireRole("mentor"), async (req, res) => {
-  await query("DELETE FROM groups WHERE id = $1 AND mentor_id = $2", [req.params.id, req.user.id]);
+  await query(`DELETE FROM groups WHERE id = $1${req.user.role === "admin" ? "" : " AND mentor_id = $2"}`, req.user.role === "admin" ? [req.params.id] : [req.params.id, req.user.id]);
   res.json({ ok: true });
 });
 
 router.post("/:id/members", requireAuth, requireRole("mentor"), async (req, res) => {
   const { userId } = req.body || {};
-  const group = await query("SELECT id FROM groups WHERE id = $1 AND mentor_id = $2", [req.params.id, req.user.id]);
+  const admin = req.user.role === "admin";
+  const group = await query(`SELECT id FROM groups WHERE id = $1${admin ? "" : " AND mentor_id = $2"}`, admin ? [req.params.id] : [req.params.id, req.user.id]);
   if (!group.rows[0]) return res.status(404).json({ error: "Группа не найдена" });
-  const mentee = await query("SELECT id FROM users WHERE id = $1 AND mentor_id = $2 AND mentor_status = 'confirmed'", [userId, req.user.id]);
+  const mentee = await query(`SELECT id FROM users WHERE id = $1 AND role = 'user'${admin ? "" : " AND mentor_id = $2 AND mentor_status = 'confirmed'"}`, admin ? [userId] : [userId, req.user.id]);
   if (!mentee.rows[0]) return res.status(400).json({ error: "Этот педагог не является вашим подтверждённым подопечным" });
   await query("INSERT INTO group_members (group_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING", [req.params.id, userId]);
   res.json({ ok: true });
 });
 
 router.delete("/:id/members/:userId", requireAuth, requireRole("mentor"), async (req, res) => {
-  const group = await query("SELECT id FROM groups WHERE id = $1 AND mentor_id = $2", [req.params.id, req.user.id]);
+  const admin = req.user.role === "admin";
+  const group = await query(`SELECT id FROM groups WHERE id = $1${admin ? "" : " AND mentor_id = $2"}`, admin ? [req.params.id] : [req.params.id, req.user.id]);
   if (!group.rows[0]) return res.status(404).json({ error: "Группа не найдена" });
   await query("DELETE FROM group_members WHERE group_id = $1 AND user_id = $2", [req.params.id, req.params.userId]);
   res.json({ ok: true });

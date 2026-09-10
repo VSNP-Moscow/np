@@ -36,12 +36,14 @@ router.post("/", requireAuth, requireRole("mentor"), async (req, res) => {
 });
 
 router.get("/", requireAuth, requireRole("mentor"), async (req, res) => {
-  const { rows } = await query("SELECT * FROM custom_tests WHERE mentor_id = $1 ORDER BY created_at DESC", [req.user.id]);
+  const admin = req.user.role === "admin";
+  const { rows } = await query(`SELECT * FROM custom_tests${admin ? "" : " WHERE mentor_id = $1"} ORDER BY created_at DESC`, admin ? [] : [req.user.id]);
   res.json({ tests: rows.map((t) => mapTest(t)) });
 });
 
 router.get("/:id", requireAuth, requireRole("mentor"), async (req, res) => {
-  const { rows } = await query("SELECT * FROM custom_tests WHERE id = $1 AND mentor_id = $2", [req.params.id, req.user.id]);
+  const admin = req.user.role === "admin";
+  const { rows } = await query(`SELECT * FROM custom_tests WHERE id = $1${admin ? "" : " AND mentor_id = $2"}`, admin ? [req.params.id] : [req.params.id, req.user.id]);
   if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
   const { rows: qs } = await query("SELECT * FROM custom_test_questions WHERE test_id = $1 ORDER BY sort_order", [req.params.id]);
   res.json({ test: mapTest(rows[0], qs.map((q) => mapQuestion(q, true))) });
@@ -50,7 +52,8 @@ router.get("/:id", requireAuth, requireRole("mentor"), async (req, res) => {
 // Полная пересборка вопросов теста (проще, чем частичный PATCH для конструктора).
 router.put("/:id", requireAuth, requireRole("mentor"), async (req, res) => {
   const { title, description, questions } = req.body || {};
-  const owner = await query("SELECT id FROM custom_tests WHERE id = $1 AND mentor_id = $2", [req.params.id, req.user.id]);
+  const admin = req.user.role === "admin";
+  const owner = await query(`SELECT id FROM custom_tests WHERE id = $1${admin ? "" : " AND mentor_id = $2"}`, admin ? [req.params.id] : [req.params.id, req.user.id]);
   if (!owner.rows[0]) return res.status(404).json({ error: "Не найдено" });
   await query("UPDATE custom_tests SET title = COALESCE($1,title), description = COALESCE($2,description) WHERE id = $3", [title, description, req.params.id]);
   if (Array.isArray(questions)) {
@@ -69,7 +72,7 @@ router.put("/:id", requireAuth, requireRole("mentor"), async (req, res) => {
 });
 
 router.delete("/:id", requireAuth, requireRole("mentor"), async (req, res) => {
-  await query("DELETE FROM custom_tests WHERE id = $1 AND mentor_id = $2", [req.params.id, req.user.id]);
+  await query(`DELETE FROM custom_tests WHERE id = $1${req.user.role === "admin" ? "" : " AND mentor_id = $2"}`, req.user.role === "admin" ? [req.params.id] : [req.params.id, req.user.id]);
   res.json({ ok: true });
 });
 

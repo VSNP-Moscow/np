@@ -140,6 +140,10 @@ export function mapUser(row) {
     approvedByAdmin: Boolean(row.approved_by_admin),
     scores: row.scores,
     avatarColor: row.avatar_color,
+    emailVerified: Boolean(row.email_verified),
+    organizationId: row.organization_id || null,
+    hasAvatar: Boolean(row.avatar_mime && row.avatar_bytes),
+    avatarUpdatedAt: row.avatar_updated_at instanceof Date ? row.avatar_updated_at.getTime() : row.avatar_updated_at,
     coins: row.coins || 0,
     xp: row.xp || 0,
     createdAt: row.created_at instanceof Date ? row.created_at.getTime() : row.created_at,
@@ -194,6 +198,11 @@ export async function initSchema() {
   // Existing installations predate binary attachment storage. Keep the
   // migration idempotent so every Render deploy can run it safely.
   if (usePostgres) {
+    await pgPool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT TRUE");
+    await pgPool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL");
+    await pgPool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_mime TEXT");
+    await pgPool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_bytes BYTEA");
+    await pgPool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_updated_at TIMESTAMPTZ");
     await pgPool.query("ALTER TABLE message_attachments ADD COLUMN IF NOT EXISTS data_bytes BYTEA");
     await pgPool.query("ALTER TABLE message_attachments ALTER COLUMN data_base64 DROP NOT NULL");
     await pgPool.query("ALTER TABLE roadmaps ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'approved'");
@@ -209,6 +218,17 @@ export async function initSchema() {
     await pgPool.query("ALTER TABLE roadmaps ADD COLUMN IF NOT EXISTS search_status JSONB NOT NULL DEFAULT '{}'");
     await pgPool.query("ALTER TABLE roadmap_progress ADD COLUMN IF NOT EXISTS mentor_feedback TEXT");
   } else {
+    const userColumns = sqlite.prepare("PRAGMA table_info(users)").all();
+    const userMigrations = [
+      ["email_verified", "ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 1"],
+      ["organization_id", "ALTER TABLE users ADD COLUMN organization_id TEXT"],
+      ["avatar_mime", "ALTER TABLE users ADD COLUMN avatar_mime TEXT"],
+      ["avatar_bytes", "ALTER TABLE users ADD COLUMN avatar_bytes BLOB"],
+      ["avatar_updated_at", "ALTER TABLE users ADD COLUMN avatar_updated_at TEXT"],
+    ];
+    for (const [name, sql] of userMigrations) {
+      if (!userColumns.some((column) => column.name === name)) sqlite.exec(sql);
+    }
     const columns = sqlite.prepare("PRAGMA table_info(message_attachments)").all();
     if (!columns.some((column) => column.name === "data_bytes")) {
       sqlite.exec("ALTER TABLE message_attachments ADD COLUMN data_bytes BLOB");
@@ -233,6 +253,9 @@ export async function initSchema() {
     const progressColumns = sqlite.prepare("PRAGMA table_info(roadmap_progress)").all();
     if (!progressColumns.some((column) => column.name === "mentor_feedback")) sqlite.exec("ALTER TABLE roadmap_progress ADD COLUMN mentor_feedback TEXT");
   }
+  await query("INSERT INTO organizations (name, short_name, region, domain) VALUES ($1,$2,$3,$4) ON CONFLICT (name) DO NOTHING", ["Демонстрационная образовательная организация", "Демо-организация", "Москва", "np.ru"]);
+  const defaultOrganization = await query("SELECT id FROM organizations WHERE name=$1", ["Демонстрационная образовательная организация"]);
+  if (defaultOrganization.rows[0]) await query("UPDATE users SET organization_id=$1 WHERE organization_id IS NULL", [defaultOrganization.rows[0].id]);
 }
 
 export async function seedIfEmpty() {

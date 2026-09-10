@@ -11,17 +11,28 @@ async function api(request, path, { method = "GET", token, data } = {}) {
   return { response, body: await response.json() };
 }
 
+async function registerAndVerify(request, data) {
+  const registered = await api(request, "/auth/register", { method: "POST", data });
+  expect(registered.response.status()).toBe(201);
+  expect(registered.body.debugCode).toMatch(/^\d{6}$/);
+  const verified = await api(request, "/auth/verify-email", {
+    method: "POST", data: { email: data.email, code: registered.body.debugCode },
+  });
+  expect(verified.response.ok()).toBe(true);
+  return verified.body;
+}
+
 test("new teacher starts with an open diagnostic and no answer choices", async ({ page }) => {
   const email = `onboarding-${Date.now()}@test.local`;
-  await api(page.request, "/auth/register", { method: "POST", data: {
-    fullName: "Новый Педагог", email, password: "123456", subject: "Русский язык",
+  await registerAndVerify(page.request, {
+    fullName: "Новый Педагог", email, password: "12345678", subject: "Русский язык",
     school: "Тестовая школа", region: "Москва", role: "user",
-  } });
+  });
 
   await page.goto(baseURL);
   await page.getByRole("button", { name: "Войти", exact: true }).first().click();
   await page.locator("#loginEmail").fill(email);
-  await page.locator("#loginPass").fill("123456");
+  await page.locator("#loginPass").fill("12345678");
   await page.locator("#loginForm").getByRole("button", { name: "Войти" }).click();
 
   await expect(page).toHaveURL(/#\/assistant$/);
@@ -33,12 +44,12 @@ test("new teacher starts with an open diagnostic and no answer choices", async (
 
 test("mentor edits and approves without allowing AI to replace the published version", async ({ request }) => {
   const email = `workflow-${Date.now()}@test.local`;
-  const registered = await api(request, "/auth/register", { method: "POST", data: {
-    fullName: "Педагог Для Согласования", email, password: "123456", subject: "Математика",
+  const registered = await registerAndVerify(request, {
+    fullName: "Педагог Для Согласования", email, password: "12345678", subject: "Математика",
     school: "Тестовая школа", region: "Москва", role: "user",
-  } });
-  const teacher = registered.body.user;
-  const teacherToken = registered.body.token;
+  });
+  const teacher = registered.user;
+  const teacherToken = registered.token;
 
   await api(request, "/ai/diagnostic/start", { method: "POST", token: teacherToken });
   let result;

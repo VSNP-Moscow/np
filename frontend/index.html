@@ -65,7 +65,7 @@
         <div class="feature-card"><div class="feature-icon tint-yellow">📅</div><h4>Каталог мероприятий</h4><p>Вебинары, открытые уроки, конкурсы и курсы — подобраны под ваши дефициты и предмет.</p></div>
         <div class="feature-card"><div class="feature-icon tint-green">🤝</div><h4>Живой наставник рядом</h4><p>Чат с закреплённым наставником, заметки, рефлексия — цифровое сопровождение пары.</p></div>
         <div class="feature-card"><div class="feature-icon tint-purple">📈</div><h4>Прогресс без давления</h4><p>6 стадий алгоритма показывают путь от диагностики до цифрового портфолио.</p></div>
-        <div class="feature-card"><div class="feature-icon tint-magenta">🛠️</div><h4>Панель администратора</h4><p>Управление педагогами, наставниками и мероприятиями школы в одном месте.</p></div>
+        <div class="feature-card"><div class="feature-icon tint-magenta">🛠️</div><h4>Панель администратора</h4><p>Управление пользователями, учебными процессами и интерфейсами организаций в одном месте.</p></div>
       </div>
     </div>
   </section>
@@ -77,7 +77,7 @@
         <h2>ИИ-ассистент — как второй наставник</h2>
         <p>Вместо формы с баллами — обычный разговор. Педагог отвечает своими словами, ИИ уточняет детали и сам определяет баллы по 6 компетенциям, а затем ищет в интернете реальные мероприятия под ваш регион.</p>
         <ul>
-          <li><span class="dot">✓</span> Открытые вопросы по каждому направлению + быстрые варианты ответа</li>
+          <li><span class="dot">✓</span> Открытые вопросы по каждому направлению с анализом ответа</li>
           <li><span class="dot">✓</span> Уточняющие вопросы при выявленных трудностях</li>
           <li><span class="dot">✓</span> Поиск реальных мероприятий: профсоюз образования, региональные ИРО, министерства</li>
           <li><span class="dot">✓</span> Свободный чат в любой момент — план на неделю, подготовка к аттестации, советы по классу</li>
@@ -137,18 +137,20 @@
       <div class="field"><label>Email</label><input type="email" id="loginEmail" required placeholder="user@np.ru"></div>
       <div class="field"><label>Пароль</label><input type="password" id="loginPass" required placeholder="123456"></div>
       <button class="btn btn-primary btn-block" type="submit">Войти</button>
+      <button class="link-button" id="forgotPasswordLink" type="button">Забыли пароль?</button>
       <p class="form-hint">Демо-пароль для всех аккаунтов: 123456</p>
     </form>
     <form id="registerForm" class="hidden">
       <div class="field"><label>Полное имя</label><input type="text" id="regName" required placeholder="Мария Сергеевна Иванова"></div>
       <div class="field"><label>Email</label><input type="email" id="regEmail" required placeholder="you@school.ru"></div>
-      <div class="field"><label>Пароль</label><input type="password" id="regPass" required placeholder="Минимум 4 символа"></div>
+      <div class="field"><label>Пароль</label><input type="password" id="regPass" required minlength="8" autocomplete="new-password" placeholder="Минимум 8 символов"></div>
       <div class="grid-2">
-        <div class="field"><label>Предмет</label><input type="text" id="regSubject" required placeholder="История"></div>
+        <div class="field"><label>Предмет</label><input type="search" id="regSubject" list="subjectOptions" required placeholder="Начните вводить"></div>
         <div class="field"><label>Стаж (лет)</label><input type="number" id="regYears" min="0" max="60" value="0" required></div>
       </div>
-      <div class="field"><label>Школа</label><input type="text" id="regSchool" placeholder="ГБОУ Школа №1248"></div>
-      <div class="field"><label>Регион</label><input type="text" id="regRegion" required placeholder="например, Республика Татарстан"></div>
+      <div class="field"><label>Образовательная организация</label><select id="regOrganization"><option value="">Другая организация</option></select></div>
+      <div class="field"><label>Школа</label><input type="search" id="regSchool" list="schoolOptions" placeholder="Название школы"></div>
+      <div class="field"><label>Регион</label><input type="search" id="regRegion" list="regionOptions" required placeholder="Начните вводить регион"></div>
       <p class="form-hint" style="margin:-8px 0 12px; text-align:left;">По региону ИИ-наставник будет искать реальные мероприятия для молодых педагогов.</p>
       <div class="field"><label>Роль</label>
         <select id="regRole">
@@ -158,6 +160,31 @@
       </div>
       <button class="btn btn-primary btn-block" type="submit">Создать аккаунт</button>
     </form>
+    <form id="verifyForm" class="hidden">
+      <h3>Подтверждение почты</h3>
+      <p class="form-hint auth-copy">Введите шестизначный код из письма.</p>
+      <div class="field"><label>Email</label><input type="email" id="verifyEmail" required readonly></div>
+      <div class="field"><label>Код</label><input type="text" id="verifyCode" required inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" placeholder="000000"></div>
+      <button class="btn btn-primary btn-block" type="submit">Подтвердить</button>
+      <button class="link-button" id="resendVerification" type="button">Отправить код ещё раз</button>
+    </form>
+    <form id="resetForm" class="hidden">
+      <h3>Восстановление пароля</h3>
+      <div class="field"><label>Email</label><input type="email" id="resetEmail" required placeholder="you@school.ru"></div>
+      <div id="resetCodeFields" class="hidden">
+        <div class="field"><label>Код из письма</label><input type="text" id="resetCode" inputmode="numeric" maxlength="6" placeholder="000000"></div>
+        <div class="field"><label>Новый пароль</label><input type="password" id="resetNewPass" minlength="8" placeholder="Минимум 8 символов"></div>
+      </div>
+      <button class="btn btn-primary btn-block" id="resetSubmit" type="submit">Получить код</button>
+      <button class="link-button" id="backToLogin" type="button">Вернуться ко входу</button>
+    </form>
+    <datalist id="subjectOptions">
+      <option value="Русский язык"><option value="Литература"><option value="Математика"><option value="Алгебра"><option value="Геометрия"><option value="История"><option value="Обществознание"><option value="География"><option value="Биология"><option value="Физика"><option value="Химия"><option value="Информатика"><option value="Иностранный язык"><option value="Начальные классы"><option value="Физическая культура"><option value="Музыка"><option value="Изобразительное искусство"><option value="Технология"><option value="Основы безопасности и защиты Родины"><option value="Дошкольное образование">
+    </datalist>
+    <datalist id="regionOptions">
+      <option value="Москва"><option value="Санкт-Петербург"><option value="Севастополь"><option value="Московская область"><option value="Ленинградская область"><option value="Республика Адыгея"><option value="Республика Алтай"><option value="Республика Башкортостан"><option value="Республика Бурятия"><option value="Республика Дагестан"><option value="Республика Ингушетия"><option value="Кабардино-Балкарская Республика"><option value="Республика Калмыкия"><option value="Карачаево-Черкесская Республика"><option value="Республика Карелия"><option value="Республика Коми"><option value="Республика Крым"><option value="Республика Марий Эл"><option value="Республика Мордовия"><option value="Республика Саха (Якутия)"><option value="Республика Северная Осетия — Алания"><option value="Республика Татарстан"><option value="Республика Тыва"><option value="Удмуртская Республика"><option value="Республика Хакасия"><option value="Чеченская Республика"><option value="Чувашская Республика"><option value="Алтайский край"><option value="Забайкальский край"><option value="Камчатский край"><option value="Краснодарский край"><option value="Красноярский край"><option value="Пермский край"><option value="Приморский край"><option value="Ставропольский край"><option value="Хабаровский край"><option value="Амурская область"><option value="Архангельская область"><option value="Астраханская область"><option value="Белгородская область"><option value="Брянская область"><option value="Владимирская область"><option value="Волгоградская область"><option value="Вологодская область"><option value="Воронежская область"><option value="Ивановская область"><option value="Иркутская область"><option value="Калининградская область"><option value="Калужская область"><option value="Кемеровская область — Кузбасс"><option value="Кировская область"><option value="Костромская область"><option value="Курганская область"><option value="Курская область"><option value="Липецкая область"><option value="Магаданская область"><option value="Мурманская область"><option value="Нижегородская область"><option value="Новгородская область"><option value="Новосибирская область"><option value="Омская область"><option value="Оренбургская область"><option value="Орловская область"><option value="Пензенская область"><option value="Псковская область"><option value="Ростовская область"><option value="Рязанская область"><option value="Самарская область"><option value="Саратовская область"><option value="Сахалинская область"><option value="Свердловская область"><option value="Смоленская область"><option value="Тамбовская область"><option value="Тверская область"><option value="Томская область"><option value="Тульская область"><option value="Тюменская область"><option value="Ульяновская область"><option value="Челябинская область"><option value="Ярославская область"><option value="Еврейская автономная область"><option value="Ненецкий автономный округ"><option value="Ханты-Мансийский автономный округ — Югра"><option value="Чукотский автономный округ"><option value="Ямало-Ненецкий автономный округ">
+    </datalist>
+    <datalist id="schoolOptions"></datalist>
   </div>
 </div>
 

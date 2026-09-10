@@ -26,12 +26,13 @@ function mapTarget(row) {
 router.post("/", requireAuth, requireRole("mentor"), async (req, res) => {
   const { title, description, dueDate, coinReward, testId, groupId, userIds } = req.body || {};
   if (!title) return res.status(400).json({ error: "Укажите название задания" });
+  const admin = req.user.role === "admin";
   if (testId) {
-    const t = await query("SELECT id FROM custom_tests WHERE id = $1 AND mentor_id = $2", [testId, req.user.id]);
+    const t = await query(`SELECT id FROM custom_tests WHERE id = $1${admin ? "" : " AND mentor_id = $2"}`, admin ? [testId] : [testId, req.user.id]);
     if (!t.rows[0]) return res.status(400).json({ error: "Тест не найден" });
   }
   if (groupId) {
-    const g = await query("SELECT id FROM groups WHERE id = $1 AND mentor_id = $2", [groupId, req.user.id]);
+    const g = await query(`SELECT id FROM groups WHERE id = $1${admin ? "" : " AND mentor_id = $2"}`, admin ? [groupId] : [groupId, req.user.id]);
     if (!g.rows[0]) return res.status(400).json({ error: "Группа не найдена" });
   }
 
@@ -48,7 +49,7 @@ router.post("/", requireAuth, requireRole("mentor"), async (req, res) => {
   }
   for (const uid of targetIds) {
     // назначаем только своим подтверждённым подопечным — защищает от произвольного userId
-    const ok = await query("SELECT id FROM users WHERE id = $1 AND mentor_id = $2 AND mentor_status = 'confirmed'", [uid, req.user.id]);
+    const ok = await query(`SELECT id FROM users WHERE id = $1 AND role = 'user'${admin ? "" : " AND mentor_id = $2 AND mentor_status = 'confirmed'"}`, admin ? [uid] : [uid, req.user.id]);
     if (ok.rows[0]) {
       await query("INSERT INTO assignment_targets (assignment_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING", [assignment.id, uid]);
       await createNotification(uid, "assignment", "Новое задание", `${req.user.fullName}: ${assignment.title}`, `#/assignments/${assignment.id}`);
@@ -59,6 +60,14 @@ router.post("/", requireAuth, requireRole("mentor"), async (req, res) => {
 
 // Наставник: свои задания. Педагог: назначенные ему.
 router.get("/", requireAuth, async (req, res) => {
+  if (req.user.role === "admin") {
+    const { rows } = await query(
+      `SELECT a.*, COUNT(t.user_id)::int AS target_count, SUM(CASE WHEN t.status <> 'assigned' THEN 1 ELSE 0 END)::int AS submitted_count
+       FROM assignments a LEFT JOIN assignment_targets t ON t.assignment_id = a.id
+       GROUP BY a.id ORDER BY a.created_at DESC`
+    );
+    return res.json({ assignments: rows.map((r) => ({ ...mapAssignment(r), targetCount: r.target_count, submittedCount: r.submitted_count })) });
+  }
   if (req.user.role === "mentor") {
     const { rows } = await query(
       `SELECT a.*, COUNT(t.user_id)::int AS target_count, COUNT(t.user_id) FILTER (WHERE t.status <> 'assigned')::int AS submitted_count
@@ -81,7 +90,7 @@ router.get("/:id", requireAuth, async (req, res) => {
   const { rows } = await query("SELECT * FROM assignments WHERE id = $1", [req.params.id]);
   const a = rows[0];
   if (!a) return res.status(404).json({ error: "Не найдено" });
-  const isMentor = a.mentor_id === req.user.id;
+  const isMentor = req.user.role === "admin" || a.mentor_id === req.user.id;
   let questions = null;
   if (a.test_id) {
     const { rows: qs } = await query("SELECT * FROM custom_test_questions WHERE test_id = $1 ORDER BY sort_order", [a.test_id]);
@@ -138,7 +147,8 @@ router.post("/:id/submit", requireAuth, async (req, res) => {
 // Наставник вручную оценивает свободное (текстовое) задание.
 router.post("/:id/grade/:userId", requireAuth, requireRole("mentor"), async (req, res) => {
   const { score, total, feedback } = req.body || {};
-  const owner = await query("SELECT * FROM assignments WHERE id = $1 AND mentor_id = $2", [req.params.id, req.user.id]);
+  const admin = req.user.role === "admin";
+  const owner = await query(`SELECT * FROM assignments WHERE id = $1${admin ? "" : " AND mentor_id = $2"}`, admin ? [req.params.id] : [req.params.id, req.user.id]);
   if (!owner.rows[0]) return res.status(404).json({ error: "Не найдено" });
   const { rows } = await query(
     `UPDATE assignment_targets SET status = 'graded', score = $1, total = $2, mentor_feedback = $3, graded_at = now()
@@ -153,7 +163,7 @@ router.post("/:id/grade/:userId", requireAuth, requireRole("mentor"), async (req
 });
 
 router.delete("/:id", requireAuth, requireRole("mentor"), async (req, res) => {
-  await query("DELETE FROM assignments WHERE id = $1 AND mentor_id = $2", [req.params.id, req.user.id]);
+  await query(`DELETE FROM assignments WHERE id = $1${req.user.role === "admin" ? "" : " AND mentor_id = $2"}`, req.user.role === "admin" ? [req.params.id] : [req.params.id, req.user.id]);
   res.json({ ok: true });
 });
 

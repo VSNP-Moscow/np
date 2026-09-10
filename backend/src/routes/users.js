@@ -9,7 +9,7 @@ const AVATAR_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 
 router.put("/me", requireAuth, async (req, res) => {
-  const { fullName, subject, school, region, yearsExperience } = req.body || {};
+  const { fullName, subject, school, region, yearsExperience, currentStage } = req.body || {};
   const fields = [];
   const values = [];
   let i = 1;
@@ -18,6 +18,11 @@ router.put("/me", requireAuth, async (req, res) => {
   if (school !== undefined) { fields.push(`school = $${i++}`); values.push(school); }
   if (region !== undefined) { fields.push(`region = $${i++}`); values.push(region); }
   if (yearsExperience !== undefined) { fields.push(`years_experience = $${i++}`); values.push(parseInt(yearsExperience, 10) || 0); }
+  if (currentStage !== undefined) {
+    const stage = Number(currentStage);
+    if (!Number.isInteger(stage) || stage < 1 || stage > 6) return res.status(400).json({ error: "Этап должен быть целым числом от 1 до 6" });
+    fields.push(`current_stage = $${i++}`); values.push(stage);
+  }
   if (!fields.length) return res.json({ user: req.user });
   values.push(req.user.id);
   const { rows } = await query(`UPDATE users SET ${fields.join(", ")} WHERE id = $${i} RETURNING *`, values);

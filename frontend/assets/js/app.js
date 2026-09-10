@@ -4,6 +4,7 @@
 (function () {
   "use strict";
   const API = window.API;
+  const appIcon = (name, size) => window.NPIcon(name, size);
 
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
@@ -94,11 +95,6 @@
       select.addEventListener("change", () => {
         const organization = options.organizations.find((item) => item.id === select.value);
         if (organization?.region) $("#regRegion").value = organization.region;
-        if (organization?.name) {
-          const option = el("option", { value: organization.name });
-          $("#schoolOptions").appendChild(option);
-          $("#regSchool").value = organization.name;
-        }
       });
     }).catch(() => {});
     $("#btnOpenLogin").addEventListener("click", () => openAuth("login"));
@@ -130,7 +126,8 @@
       const payload = {
         fullName: $("#regName").value.trim(), email: $("#regEmail").value.trim(), password: $("#regPass").value,
         subject: $("#regSubject").value.trim(), yearsExperience: parseInt($("#regYears").value || "0", 10),
-        school: $("#regSchool").value.trim(), region: $("#regRegion").value.trim(), role: $("#regRole").value,
+        school: $("#regOrganization").selectedOptions[0]?.value ? $("#regOrganization").selectedOptions[0].textContent.trim() : "",
+        region: $("#regRegion").value.trim(), role: $("#regRole").value,
         organizationId: $("#regOrganization").value || null,
       };
       if (payload.password.length < 8) { $("#authError").innerHTML = '<div class="form-error">Пароль должен быть не короче 8 символов.</div>'; return; }
@@ -191,27 +188,27 @@
   /* =========================== APP SHELL / ROUTER =========================== */
   const NAV = {
     user: [
-      { id: "dashboard", label: "Дашборд", icon: "🏠" }, { id: "assistant", label: "ИИ-наставник", icon: "🤖" },
-      { id: "roadmap", label: "Дорожная карта", icon: "🗺️" }, { id: "events", label: "Мероприятия", icon: "📅" },
-      { id: "assignments", label: "Задания", icon: "📮" },
-      { id: "mentor", label: "Мой наставник", icon: "🤝" }, { id: "portfolio", label: "Портфолио", icon: "🎓" },
-      { id: "files", label: "Файлы", icon: "📎" }, { id: "reports", label: "Отчёты", icon: "📊" },
-      { id: "notifications", label: "Уведомления", icon: "🔔" }, { id: "notes", label: "Заметки", icon: "📝" }, { id: "profile", label: "Профиль", icon: "⚙️" },
+      { id: "dashboard", label: "Обзор", icon: "home" }, { id: "assistant", label: "ИИ-наставник", icon: "bot" },
+      { id: "roadmap", label: "Дорожная карта", icon: "map" }, { id: "events", label: "Мероприятия", icon: "calendar" },
+      { id: "assignments", label: "Задания", icon: "inbox" },
+      { id: "mentor", label: "Мой наставник", icon: "userCheck" }, { id: "portfolio", label: "Портфолио", icon: "graduation" },
+      { id: "files", label: "Файлы", icon: "paperclip" }, { id: "reports", label: "Отчёты", icon: "chart" },
+      { id: "notifications", label: "Уведомления", icon: "bell" }, { id: "notes", label: "Заметки", icon: "note" }, { id: "profile", label: "Профиль", icon: "settings" },
     ],
     mentor: [
-      { id: "dashboard", label: "Дашборд", icon: "🏠" }, { id: "mentees", label: "Мои педагоги", icon: "🎓" },
-      { id: "groups", label: "Группы", icon: "👨‍👩‍👧‍👦" }, { id: "assignments", label: "Задания", icon: "📮" }, { id: "tests", label: "Конструктор тестов", icon: "🧩" },
-      { id: "events", label: "Мероприятия", icon: "📅" }, { id: "files", label: "Файлы", icon: "📎" },
-      { id: "reports", label: "Отчёты", icon: "📊" }, { id: "notifications", label: "Уведомления", icon: "🔔" },
-      { id: "notes", label: "Заметки", icon: "📝" }, { id: "profile", label: "Профиль", icon: "⚙️" },
+      { id: "dashboard", label: "Обзор", icon: "home" }, { id: "mentees", label: "Мои педагоги", icon: "graduation" },
+      { id: "groups", label: "Группы", icon: "users" }, { id: "assignments", label: "Задания", icon: "inbox" }, { id: "tests", label: "Конструктор тестов", icon: "clipboard" },
+      { id: "events", label: "Мероприятия", icon: "calendar" }, { id: "files", label: "Файлы", icon: "paperclip" },
+      { id: "reports", label: "Отчёты", icon: "chart" }, { id: "notifications", label: "Уведомления", icon: "bell" },
+      { id: "notes", label: "Заметки", icon: "note" }, { id: "profile", label: "Профиль", icon: "settings" },
     ],
     admin: [
-      { id: "dashboard", label: "Дашборд", icon: "🏠" }, { id: "users", label: "Педагоги и наставники", icon: "👥" },
-      { id: "organizations", label: "Организации и дизайн", icon: "🏫" },
-      { id: "groups", label: "Группы", icon: "👨‍👩‍👧‍👦" }, { id: "tests", label: "Тесты", icon: "🧩" },
-      { id: "assignments", label: "Задания", icon: "📮" }, { id: "events", label: "Мероприятия", icon: "📅" },
-      { id: "reports", label: "Отчёты", icon: "📊" }, { id: "activity", label: "Журнал действий", icon: "🧾" },
-      { id: "notifications", label: "Уведомления", icon: "🔔" }, { id: "notes", label: "Заметки", icon: "📝" }, { id: "profile", label: "Профиль", icon: "⚙️" },
+      { id: "dashboard", label: "Обзор", icon: "home" }, { id: "users", label: "Педагоги и наставники", icon: "users" },
+      { id: "organizations", label: "Организации и дизайн", icon: "building" },
+      { id: "groups", label: "Группы", icon: "users" }, { id: "tests", label: "Тесты", icon: "clipboard" },
+      { id: "assignments", label: "Задания", icon: "inbox" }, { id: "events", label: "Мероприятия", icon: "calendar" },
+      { id: "reports", label: "Отчёты", icon: "chart" }, { id: "activity", label: "Журнал действий", icon: "activity" },
+      { id: "notifications", label: "Уведомления", icon: "bell" }, { id: "notes", label: "Заметки", icon: "note" }, { id: "profile", label: "Профиль", icon: "settings" },
     ],
   };
 
@@ -294,7 +291,7 @@
     lastUnreadCount = unread;
 
     const sidebar = el("div", { class: "sidebar", id: "sidebar" });
-    sidebar.appendChild(el("div", { class: "brand" }, [el("span", { class: "brand-mark" }, ["🧭"]), " НавигаторПедагога"]));
+    sidebar.appendChild(el("div", { class: "brand" }, [el("span", { class: "brand-mark" }, [appIcon("compass", 20)]), "НавигаторПедагога"]));
     const su = el("div", { class: "side-user" });
     su.appendChild(avatarNode(user));
     su.appendChild(el("div", { class: "info" }, [el("b", {}, [user.fullName]), el("span", {}, [API.roleLabel(user.role)])]));
@@ -308,7 +305,7 @@
     }
 
     navItems.forEach(n => {
-      const children = [el("span", { class: "ic" }, [n.icon]), el("span", { class: "nav-label" }, [n.label])];
+      const children = [el("span", { class: "ic" }, [appIcon(n.icon, 19)]), el("span", { class: "nav-label" }, [n.label])];
       if (n.id === "notifications" && unread) children.push(el("span", { class: "nav-count" }, [String(unread)]));
       const link = el("div", { class: "nav-link" + (n.id === currentView ? " active" : ""), "data-view": n.id }, children);
       link.addEventListener("click", () => go(n.id));
@@ -316,13 +313,13 @@
     });
     sidebar.appendChild(el("div", { class: "nav-spacer" }));
     const foot = el("div", { class: "nav-foot" });
-    const logoutLink = el("div", { class: "nav-link" }, [el("span", { class: "ic" }, ["🚪"]), "Выйти"]);
+    const logoutLink = el("div", { class: "nav-link" }, [el("span", { class: "ic" }, [appIcon("logout", 19)]), "Выйти"]);
     logoutLink.addEventListener("click", logout);
     foot.appendChild(logoutLink);
     sidebar.appendChild(foot);
 
-    const mobileTop = el("div", { class: "mobile-topbar" }, [el("div", { class: "brand", style: "font-size:16px;" }, [el("span", { class: "brand-mark", style: "width:30px;height:30px;font-size:14px;" }, ["🧭"]), "Навигатор"])]);
-    const burger = el("button", { class: "btn btn-secondary btn-sm" }, ["☰ Меню"]);
+    const mobileTop = el("div", { class: "mobile-topbar" }, [el("div", { class: "brand", style: "font-size:16px;" }, [el("span", { class: "brand-mark", style: "width:30px;height:30px;font-size:14px;" }, [appIcon("compass", 17)]), "Навигатор"])]);
+    const burger = el("button", { class: "btn btn-secondary btn-sm" }, [appIcon("menu", 18), "Меню"]);
     burger.addEventListener("click", () => sidebar.classList.toggle("open"));
     mobileTop.appendChild(burger);
 
@@ -420,7 +417,9 @@
   }
 
   function topbar(main, title, sub, actions) {
-    const bar = el("div", { class: "topbar" }, [el("div", {}, [el("h1", {}, [title]), sub ? el("div", { class: "sub" }, [sub]) : null])]);
+    const cleanTitle = String(title).replace(/^[^\p{L}\p{N}]+/u, "");
+    const navIcon = (NAV[API.getCurUser()?.role] || NAV.user).find((item) => item.id === currentView)?.icon || "compass";
+    const bar = el("div", { class: "topbar" }, [el("div", {}, [el("h1", {}, [appIcon(navIcon, 25), cleanTitle]), sub ? el("div", { class: "sub" }, [sub]) : null])]);
     if (actions) { const a = el("div", { class: "topbar-actions" }); actions.forEach(x => a.appendChild(x)); bar.appendChild(a); }
     main.appendChild(bar);
   }
@@ -493,7 +492,7 @@
   }
 
   function statTile(color, label, value) {
-    return el("div", { class: "stat-tile", style: `background:var(--${color}-pastel); color:var(--${color}-ink);` }, [el("b", {}, [value]), el("span", {}, [label.toUpperCase()])]);
+    return el("div", { class: `stat-tile stat-${color}`, style: `background:var(--${color}-pastel); color:var(--${color}-ink);` }, [el("b", {}, [value]), el("span", {}, [label.toUpperCase()])]);
   }
   function miniScoreRow(c, score) {
     const pct = score ? (score / 5) * 100 : 0;
@@ -839,14 +838,29 @@
 
     if (rm.summary) main.appendChild(el("div", { class: "card" }, [el("div", { class: "card-title" }, ["💬 Комментарий ИИ-наставника"]), el("p", { style: "font-size:14px; color:var(--ink-soft);" }, [rm.summary])]));
 
-    const algoCard = el("div", { class: "card" }, [el("div", { class: "card-title" }, ["📋 Этапы алгоритма (методология Поляковой Г.Д.)"])]);
-    const diagram = el("div", { class: "route-diagram" });
+    const algoCard = el("section", { class: "card algorithm-card" }, [
+      el("div", { class: "section-inline-head" }, [el("div", {}, [
+        el("h3", {}, ["Этапы профессионального развития"]),
+        el("p", {}, ["Выберите текущий этап. Изменение сохранится в профиле и отчётах."]),
+      ])]),
+    ]);
+    const diagram = el("div", { class: "route-diagram editable-stages", role: "list", "aria-label": "Этапы алгоритма" });
     const stageIdx = (currentStage || 1) - 1;
     API.ALGO_STAGES.forEach((s, i) => {
-      diagram.appendChild(el("div", { class: "route-node " + (i === stageIdx ? "current" : i < stageIdx ? "done" : "") }, [
+      const node = el("button", { type: "button", role: "listitem", class: "route-node " + (i === stageIdx ? "current" : i < stageIdx ? "done" : ""), "aria-current": i === stageIdx ? "step" : "false" }, [
         el("div", { class: "route-dot " + (i === stageIdx ? "current" : i < stageIdx ? "done" : "") }, [i < stageIdx ? "✓" : String(i + 1)]),
-        el("div", { class: "label" }, [s]),
-      ]));
+        el("div", { class: "label" }, [el("b", {}, [s]), el("span", {}, [i === stageIdx ? "Текущий этап" : i < stageIdx ? "Завершён" : "Запланирован"])]),
+      ]);
+      node.addEventListener("click", async () => {
+        if (i === stageIdx) return;
+        $$(".editable-stages .route-node").forEach((button) => { button.disabled = true; });
+        try {
+          await API.updateMe({ currentStage: i + 1 });
+          toast(`Текущий этап: ${i + 1} из 6`);
+          await renderMain();
+        } catch (error) { apiErr(error); $$(".editable-stages .route-node").forEach((button) => { button.disabled = false; }); }
+      });
+      diagram.appendChild(node);
     });
     algoCard.appendChild(diagram);
     main.appendChild(algoCard);
@@ -1108,18 +1122,39 @@
   /* =========================== EVENTS =========================== */
   let eventFilter = "all";
   let eventSearch = "";
+  let eventType = "all";
+  let eventRegion = "all";
+  let eventStatus = "all";
+  let eventSearchTimer = null;
   async function renderEvents(main, user) {
     const isAdmin = user.role === "admin";
-    topbar(main, "📅 Мероприятия", "Каталог платформы (общие мероприятия для всех регионов)", isAdmin ? [addBtn("+ Добавить", () => openEventModal(null))] : null);
+    topbar(main, "Мероприятия", "Подборка обучения по компетенциям, формату и региону", isAdmin ? [addBtn("+ Добавить", () => openEventModal(null))] : null);
 
     const searchWrap = el("form", { class: "event-search" });
-    const searchInput = el("input", { type: "search", value: eventSearch, placeholder: "Название, источник или регион" });
-    const searchBtn = el("button", { class: "btn btn-primary btn-sm", type: "submit" }, ["Найти"]);
-    const clearBtn = el("button", { class: "btn btn-ghost btn-sm", type: "button", title: "Очистить поиск" }, ["×"]);
-    searchWrap.appendChild(searchInput); searchWrap.appendChild(searchBtn); searchWrap.appendChild(clearBtn);
+    const searchField = el("label", { class: "event-search-field" }, [appIcon("search", 19)]);
+    const searchInput = el("input", { type: "search", value: eventSearch, placeholder: "Поиск по названию, описанию, источнику или региону", "aria-label": "Поиск мероприятий" });
+    searchField.appendChild(searchInput);
+    const searchBtn = el("button", { class: "btn btn-primary btn-sm", type: "submit" }, [appIcon("search", 18), "Найти"]);
+    const clearBtn = el("button", { class: "btn btn-secondary btn-sm", type: "button", title: "Сбросить все фильтры" }, ["Сбросить"]);
+    searchWrap.appendChild(searchField); searchWrap.appendChild(searchBtn); searchWrap.appendChild(clearBtn);
     searchWrap.addEventListener("submit", (e) => { e.preventDefault(); eventSearch = searchInput.value.trim(); renderMain(); });
-    clearBtn.addEventListener("click", () => { eventSearch = ""; renderMain(); });
+    searchInput.addEventListener("input", () => {
+      clearTimeout(eventSearchTimer);
+      eventSearchTimer = setTimeout(() => { eventSearch = searchInput.value.trim(); renderMain(); }, 350);
+    });
+    clearBtn.addEventListener("click", () => { eventSearch = ""; eventFilter = "all"; eventType = "all"; eventRegion = "all"; eventStatus = "all"; renderMain(); });
     main.appendChild(searchWrap);
+
+    const filterBar = el("div", { class: "event-filter-bar" });
+    const typeSelect = el("select", { "aria-label": "Формат мероприятия" }, [new Option("Любой формат", "all"), new Option("Онлайн", "online"), new Option("Очно", "offline")]);
+    const regionSelect = el("select", { "aria-label": "Регион мероприятия" }, [new Option("Все регионы", "all"), new Option(`Мой регион: ${user.region || "не указан"}`, "mine")]);
+    const statusSelect = el("select", { "aria-label": "Статус прохождения" }, [new Option("Любой статус", "all"), new Option("Не пройдено", "open"), new Option("Пройдено", "completed")]);
+    typeSelect.value = eventType; regionSelect.value = eventRegion; statusSelect.value = eventStatus;
+    [[typeSelect, (value) => { eventType = value; }], [regionSelect, (value) => { eventRegion = value; }], [statusSelect, (value) => { eventStatus = value; }]].forEach(([select, assign]) => {
+      select.addEventListener("change", () => { assign(select.value); renderMain(); });
+      filterBar.appendChild(select);
+    });
+    main.appendChild(filterBar);
 
     const filters = ["all", ...API.COMPETENCIES.map(c => c.id)];
     const chipRow = el("div", { class: "chip-row", style: "margin-bottom:18px;" });
@@ -1131,7 +1166,10 @@
     });
     main.appendChild(chipRow);
 
-    const list = await API.listEvents(eventFilter, eventSearch);
+    const list = await API.listEvents(eventFilter, eventSearch, { type: eventType, region: eventRegion === "mine" ? user.region : "", status: eventStatus });
+    main.appendChild(el("div", { class: "event-results-meta", "aria-live": "polite" }, [
+      list.length ? `Найдено: ${list.length}` : "По вашему запросу результатов нет",
+    ]));
     if (!list.length) { main.appendChild(emptyState("📅", "Ничего не найдено", "Измените запрос или выберите другую компетенцию.")); return; }
     list.forEach(e => main.appendChild(eventCard(e, user)));
   }
@@ -2236,12 +2274,16 @@
     topbar(main, "🎓 Профессиональное портфолио", "Профиль компетенций, подтверждённые результаты и рефлексия", [addBtn, pdfBtn]);
 
     const portfolio = await API.getPortfolio();
-    const cover = el("div", { class: "portfolio-cover" }, [
+    const portfolioIdentity = el("div", { class: "portfolio-identity" }, [
+      avatarNode(user, "portfolio-avatar"),
       el("div", { class: "portfolio-cover-copy" }, [
         el("span", { class: "portfolio-kicker" }, ["ЦИФРОВОЕ ПОРТФОЛИО · ЭТАП 6"]),
         el("h2", {}, [portfolio.profile.fullName]),
         el("p", {}, [`${portfolio.profile.subject} · ${portfolio.profile.school} · ${portfolio.profile.region}`]),
       ]),
+    ]);
+    const cover = el("div", { class: "portfolio-cover" }, [
+      portfolioIdentity,
       el("div", { class: "portfolio-stage" }, [el("b", {}, [String(portfolio.profile.stage)]), el("span", {}, ["этап из 6"])]),
     ]);
     main.appendChild(cover);
@@ -2352,7 +2394,7 @@
     report.competencies.forEach((item) => comp.appendChild(miniScoreRow({ id: item.id, label: item.label, icon: API.competency(item.id)?.icon || "•" }, item.value)));
     const note = el("div", { class: "report-note" }, [el("span", {}, ["Срез"]), el("b", {}, [formatDate(report.generatedAt)]), el("p", {}, [report.scope === "admin" ? "Сводка по всей платформе" : report.scope === "mentor" ? `В отчёте ${report.meta.trackedPeople} подопечных` : "Ваш индивидуальный отчёт"])]);
     detail.appendChild(comp); detail.appendChild(note); main.appendChild(detail);
-    if (report.people.length) {
+    if (report.scope !== "user" && report.people.length) {
       const table = el("div", { class: "data-table" }, [el("div", { class: "data-table-head" }, ["Педагог", "Предмет", "Регион", "Этап", "Балл"].map((value) => el("span", {}, [value])))]);
       report.people.forEach((person) => table.appendChild(el("div", { class: "data-table-row" }, [
         el("b", { "data-label": "Педагог" }, [person.name]), el("span", { "data-label": "Предмет" }, [person.subject]), el("span", { "data-label": "Регион" }, [person.region]), el("span", { "data-label": "Этап" }, [`${person.stage}/6`]), el("span", { "data-label": "Балл", class: "mono" }, [person.average ? `${person.average}/5` : "—"]),
@@ -2440,16 +2482,6 @@
     });
     card.appendChild(saveBtn);
     main.appendChild(card);
-
-    const statusCard = el("div", { class: "card" }, [
-      el("div", { class: "card-title" }, ["🤖 Статус ИИ-наставника"]),
-      el("p", { style: "font-size:13px; color:var(--ink-soft);" }, [
-        AI_LIVE
-          ? `Подключён ${window.__NP_AI_PROVIDER || "живой ИИ"}${window.__NP_AI_MODEL ? ` (${window.__NP_AI_MODEL})` : ""}. Диалог, диагностика и дорожная карта работают через AI API.`
-          : "ИИ работает в офлайн-режиме: диалоговая диагностика доступна, но внешний AI API не подключён.",
-      ]),
-    ]);
-    main.appendChild(statusCard);
 
     if (user.role === "user" && API.hasScores(user)) {
       const pCard = el("div", { class: "card", style: "margin-top:18px;" }, [

@@ -155,10 +155,13 @@
     async listActivity(limit = 100) { const data = await request("GET", `/activity?limit=${limit}`); return data.activities; },
 
     // ---- events ----
-    async listEvents(area, search) {
+    async listEvents(area, search, filters = {}) {
       const params = new URLSearchParams();
       if (area && area !== "all") params.set("area", area);
       if (search) params.set("q", search);
+      if (filters.type && filters.type !== "all") params.set("type", filters.type);
+      if (filters.region) params.set("region", filters.region);
+      if (filters.status && filters.status !== "all") params.set("status", filters.status);
       const data = await request("GET", "/events" + (params.size ? "?" + params : ""));
       return data.events;
     },

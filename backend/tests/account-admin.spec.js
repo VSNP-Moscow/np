@@ -59,8 +59,23 @@ test("avatar validation and organization administration enforce permissions", as
   expect(invalid.response.status()).toBe(400);
   const image = await request.get(`${baseURL}/api/users/${user.body.user.id}/avatar`);
   expect(image.headers()["content-type"]).toContain("image/png");
+  const portfolioPdf = await request.get(`${baseURL}/api/ai/portfolio/pdf`, { headers: { Authorization: `Bearer ${user.body.token}` } });
+  expect(portfolioPdf.ok()).toBe(true);
+  expect(portfolioPdf.headers()["content-type"]).toContain("application/pdf");
+  expect((await portfolioPdf.body()).length).toBeGreaterThan(1000);
   const removed = await api(request, "/users/me/avatar", { method: "DELETE", token: user.body.token });
   expect(removed.body.user.hasAvatar).toBe(false);
+});
+
+test("teacher can persist a valid algorithm stage", async ({ request }) => {
+  const user = await api(request, "/auth/login", { method: "POST", data: { email: "user@np.ru", password: "123456" } });
+  const originalStage = user.body.user.currentStage;
+  const updated = await api(request, "/users/me", { method: "PUT", token: user.body.token, data: { currentStage: 4 } });
+  expect(updated.response.ok()).toBe(true);
+  expect(updated.body.user.currentStage).toBe(4);
+  const invalid = await api(request, "/users/me", { method: "PUT", token: user.body.token, data: { currentStage: 7 } });
+  expect(invalid.response.status()).toBe(400);
+  await api(request, "/users/me", { method: "PUT", token: user.body.token, data: { currentStage: originalStage } });
 });
 
 test("administrator manages all learning process modules", async ({ request }) => {

@@ -10,13 +10,17 @@ const router = Router();
 // Каталог мероприятий читается часто и меняется редко — кэшируем на 60с.
 // Персональная отметка "пройдено" не кэшируется (личная, у каждого своя), поэтому
 // кэшируем только сам каталог, а completion подмешиваем после чтения из кэша.
-async function loadCatalog(area, search) {
+async function loadCatalog(area, search, type, region) {
   const term = String(search || "").trim().slice(0, 100);
-  return cached(`events:catalog:${area || "all"}:${term.toLowerCase()}`, 60_000, async () => {
+  const eventType = ["online", "offline"].includes(type) ? type : "";
+  const eventRegion = String(region || "").trim().slice(0, 120);
+  return cached(`events:catalog:${area || "all"}:${eventType || "all"}:${eventRegion.toLowerCase() || "all"}:${term.toLowerCase()}`, 60_000, async () => {
     const clauses = [];
     const params = [];
     if (area && area !== "all") { params.push(area); clauses.push(`area = $${params.length}`); }
-    const { rows } = await query(`SELECT * FROM events${clauses.length ? " WHERE " + clauses.join(" AND ") : ""} ORDER BY created_at DESC`, params);
+    if (eventType) { params.push(eventType); clauses.push(`type = $${params.length}`); }
+    if (eventRegion) { params.push(`%${eventRegion}%`); clauses.push(`(region ILIKE $${params.length} OR region ILIKE '%все регионы%')`); }
+    const { rows } = await query(`SELECT * FROM events${clauses.length ? " WHERE " + clauses.join(" AND ") : ""} ORDER BY event_date ASC, created_at DESC`, params);
     if (!term) return rows;
     const needle = term.toLocaleLowerCase("ru-RU");
     return rows.filter((event) => [event.title, event.description, event.source, event.region]
@@ -25,10 +29,13 @@ async function loadCatalog(area, search) {
 }
 
 router.get("/", requireAuth, async (req, res) => {
-  const catalog = await loadCatalog(req.query.area, req.query.q);
+  const catalog = await loadCatalog(req.query.area, req.query.q, req.query.type, req.query.region);
   const { rows: completions } = await query("SELECT event_id, reflection FROM event_completions WHERE user_id = $1", [req.user.id]);
   const completedMap = new Map(completions.map((c) => [c.event_id, c.reflection]));
-  res.json({ events: catalog.map((e) => mapEvent(e, completedMap.has(e.id) ? { completed: true, reflection: completedMap.get(e.id) } : null)) });
+  let events = catalog.map((e) => mapEvent(e, completedMap.has(e.id) ? { completed: true, reflection: completedMap.get(e.id) } : null));
+  if (req.query.status === "completed") events = events.filter((event) => event.completed);
+  if (req.query.status === "open") events = events.filter((event) => !event.completed);
+  res.json({ events });
 });
 
 router.post("/", requireAuth, requireRole("admin"), async (req, res) => {

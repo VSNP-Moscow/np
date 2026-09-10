@@ -247,7 +247,7 @@ router.delete("/portfolio/items/:id", requireAuth, async (req, res) => {
 
 router.get("/portfolio/pdf", requireAuth, async (req, res) => {
   if (req.user.role !== "user") return res.status(403).json({ error: "Портфолио доступно молодому педагогу" });
-  const portfolio = await buildPortfolioData(req.user, req.query.force === "1");
+  const portfolio = await buildPortfolioData(req.user, req.query.force === "1", true);
   const pdf = await createPortfolioPdf(portfolio);
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Length", String(pdf.length));

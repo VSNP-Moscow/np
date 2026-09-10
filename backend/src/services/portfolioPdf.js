@@ -57,8 +57,17 @@ export function createPortfolioPdf(portfolio) {
     doc.font("Bold").fontSize(16).fillColor(COLORS.ink).text("NP", 55, 47);
     doc.font("Bold").fontSize(10).fillColor("#FFFFFF").text("НАВИГАТОРПЕДАГОГА", 98, 49);
     doc.font("Regular").fontSize(8).fillColor("#BFD1C7").text("Цифровое профессиональное портфолио", 98, 66);
-    doc.font("Bold").fontSize(25).fillColor("#FFFFFF").text(portfolio.profile.fullName, 48, 104, { width: 490 });
-    doc.font("Regular").fontSize(10).fillColor("#DCE8E1").text(`${portfolio.profile.subject}  |  ${portfolio.profile.school}  |  ${portfolio.profile.region}`, 48, 145, { width: 490 });
+    const avatarBytes = portfolio.profile.avatarBytes;
+    const avatarSupported = avatarBytes && ["image/jpeg", "image/png"].includes(portfolio.profile.avatarMime);
+    if (avatarSupported) {
+      try { doc.image(Buffer.isBuffer(avatarBytes) ? avatarBytes : Buffer.from(avatarBytes), 455, 88, { fit: [78, 78], align: "center", valign: "center" }); } catch {}
+    } else {
+      const initials = portfolio.profile.fullName.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+      doc.roundedRect(469, 94, 64, 64, 10).fill("#E5AA3C");
+      doc.font("Bold").fontSize(18).fillColor(COLORS.ink).text(initials, 469, 116, { width: 64, align: "center" });
+    }
+    doc.font("Bold").fontSize(25).fillColor("#FFFFFF").text(portfolio.profile.fullName, 48, 104, { width: 390 });
+    doc.font("Regular").fontSize(10).fillColor("#DCE8E1").text(`${portfolio.profile.subject}  |  ${portfolio.profile.school}  |  ${portfolio.profile.region}`, 48, 145, { width: 390 });
     doc.font("Regular").fontSize(8).fillColor("#AFC3B8").text(`Сформировано ${dateText(portfolio.generatedAt)}  |  Этап ${portfolio.profile.stage} из 6`, 48, 169);
     doc.y = 226;
 

@@ -1,9 +1,9 @@
 import { COMPETENCIES, query } from "../db.js";
 import { getOrGeneratePortfolio } from "./aiFeatures.js";
 
-export async function buildPortfolioData(user, force = false) {
+export async function buildPortfolioData(user, force = false, includeAvatar = false) {
   const text = await getOrGeneratePortfolio(user, force);
-  const [completed, progress, notes, items, assignments, mentor] = await Promise.all([
+  const [completed, progress, notes, items, assignments, mentor, avatar] = await Promise.all([
     query(`SELECT e.title, e.area, e.event_date, ec.reflection, ec.completed_at
            FROM event_completions ec JOIN events e ON e.id = ec.event_id
            WHERE ec.user_id = $1 ORDER BY ec.completed_at DESC`, [user.id]),
@@ -15,6 +15,7 @@ export async function buildPortfolioData(user, force = false) {
            FROM assignment_targets t JOIN assignments a ON a.id = t.assignment_id
            WHERE t.user_id = $1 AND t.status <> 'assigned' ORDER BY t.submitted_at DESC`, [user.id]),
     user.mentorId ? query("SELECT full_name, subject FROM users WHERE id = $1", [user.mentorId]) : Promise.resolve({ rows: [] }),
+    includeAvatar ? query("SELECT avatar_mime, avatar_bytes FROM users WHERE id = $1", [user.id]) : Promise.resolve({ rows: [] }),
   ]);
   const scores = COMPETENCIES.map((competency) => ({
     ...competency,
@@ -31,6 +32,8 @@ export async function buildPortfolioData(user, force = false) {
       yearsExperience: Number(user.yearsExperience || 0),
       stage: Number(user.currentStage || 1),
       mentor: mentor.rows[0]?.full_name || null,
+      avatarMime: avatar.rows[0]?.avatar_mime || null,
+      avatarBytes: avatar.rows[0]?.avatar_bytes || null,
     },
     summary: text,
     scores,

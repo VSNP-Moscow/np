@@ -21,7 +21,8 @@ async function issueCode(user, purpose) {
     console.error(`[email] ${purpose} delivery failed for ${user.id}:`, error.message || error);
     delivery = { sent: false, reason: "delivery_failed" };
   }
-  return { delivery, debugCode: process.env.NODE_ENV === "production" ? undefined : code };
+  const allowDebugCode = !process.env.DATABASE_URL && process.env.NODE_ENV !== "production";
+  return { delivery, debugCode: allowDebugCode ? code : undefined };
 }
 
 async function consumeCode(userId, purpose, code) {
@@ -112,7 +113,7 @@ router.post("/mail-test", requireAuth, requireRole("admin"), codeLimiter, async 
   if (!EMAIL_RE.test(email)) return res.status(400).json({ error: "Укажите корректный email" });
   const delivery = await sendAccountCode({ to: email, code: createEmailCode(), purpose: "verify_email" });
   if (!delivery.sent) return res.status(503).json({ error: "SMTP не настроен" });
-  res.json({ sent: true });
+  res.json({ sent: true, provider: delivery.provider });
 });
 
 router.post("/login", async (req, res) => {

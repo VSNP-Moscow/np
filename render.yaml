@@ -29,3 +29,15 @@ services:
         sync: false
       - key: MAIL_FROM
         sync: false
+      - key: MAIL_REPLY_TO
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: 465
+      - key: SMTP_SECURE
+        value: true
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false

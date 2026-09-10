@@ -31,12 +31,6 @@
 
   /* =========================== LANDING =========================== */
   function renderLandingStatics() {
-    const grid = $("#compGrid");
-    grid.innerHTML = "";
-    API.COMPETENCIES.forEach(c => {
-      grid.appendChild(el("div", { class: "comp-pill" }, [el("div", { class: "ic" }, [c.icon]), el("h5", {}, [c.label]), el("p", {}, [c.desc])]));
-    });
-
     const accWrap = $("#demoAccounts");
     accWrap.innerHTML = "";
     const demo = [
@@ -55,18 +49,6 @@
       accWrap.appendChild(card);
     });
 
-    const sample = { subject: 3, pedagogy: 2, method: 3, digital: 2, communication: 3, personal: 4 };
-    const routeWrap = $("#heroRoute");
-    routeWrap.innerHTML = "";
-    API.COMPETENCIES.forEach((c, i) => {
-      const score = sample[c.id];
-      const weak = score <= 2;
-      const cls = weak ? "current" : score >= 4 ? "done" : "";
-      routeWrap.appendChild(el("div", { class: "route-node " + cls }, [
-        el("div", { class: "route-dot " + cls }, [weak ? "!" : score >= 4 ? "✓" : String(i + 1)]),
-        el("div", { class: "label" }, [`${c.icon} ${c.label} — ${score}/5${weak ? " · приоритет" : ""}`]),
-      ]));
-    });
   }
 
   async function quickLogin(email) {
@@ -74,8 +56,8 @@
     catch (e) { apiErr(e); }
   }
 
-  function openAuth(tab) { $("#authModal").classList.remove("hidden"); setAuthTab(tab || "login"); }
-  function closeAuth() { $("#authModal").classList.add("hidden"); $("#authError").innerHTML = ""; }
+  function openAuth(tab) { setAuthTab(tab || "login"); $("#authModal").scrollIntoView({ behavior: "smooth", block: "center" }); }
+  function closeAuth() { $("#authError").innerHTML = ""; }
   function setAuthTab(tab) {
     $("#tabLogin").classList.toggle("active", tab === "login");
     $("#tabRegister").classList.toggle("active", tab === "register");
@@ -97,15 +79,13 @@
         if (organization?.region) $("#regRegion").value = organization.region;
       });
     }).catch(() => {});
-    $("#btnOpenLogin").addEventListener("click", () => openAuth("login"));
-    $("#btnOpenRegister").addEventListener("click", () => openAuth("register"));
-    $("#btnHeroStart").addEventListener("click", () => openAuth("register"));
-    $("#btnAiShowcase").addEventListener("click", () => openAuth("register"));
-    $("#btnHeroDemo").addEventListener("click", () => document.getElementById("demo").scrollIntoView({ behavior: "smooth" }));
-    $("#authClose").addEventListener("click", closeAuth);
     $("#tabLogin").addEventListener("click", () => setAuthTab("login"));
     $("#tabRegister").addEventListener("click", () => setAuthTab("register"));
-    $("#authModal").addEventListener("click", (e) => { if (e.target.id === "authModal") closeAuth(); });
+    $("#changeVerificationEmail").addEventListener("click", () => {
+      $("#regEmail").value = $("#verifyEmail").value;
+      setAuthTab("register");
+      $("#regEmail").focus();
+    });
 
     $("#loginForm").addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -136,7 +116,7 @@
         const result = await API.register(payload);
         $("#verifyEmail").value = result.email;
         setAuthTab("verify");
-        $("#authError").innerHTML = result.mailSent ? '<div class="form-success">Код отправлен на почту.</div>' : '<div class="form-error">Аккаунт создан, но отправка письма пока не настроена администратором.</div>';
+        $("#authError").innerHTML = result.mailSent ? '<div class="form-success">Письмо принято почтовым сервисом. Проверьте «Входящие» и «Спам»; доставка может занять до 2 минут.</div>' : '<div class="form-error">Аккаунт создан, но письмо не было принято почтовым сервисом. Повторите отправку.</div>';
       } catch (err) { $("#authError").innerHTML = `<div class="form-error">${esc(err.message)}</div>`; }
     });
 
@@ -148,10 +128,18 @@
       } catch (err) { $("#authError").innerHTML = `<div class="form-error">${esc(err.message)}</div>`; }
     });
     $("#resendVerification").addEventListener("click", async () => {
+      const button = $("#resendVerification");
       try {
+        button.disabled = true;
         const result = await API.resendVerification($("#verifyEmail").value);
-        $("#authError").innerHTML = '<div class="form-success">Новый код создан и отправлен.</div>';
-      } catch (err) { $("#authError").innerHTML = `<div class="form-error">${esc(err.message)}</div>`; }
+        $("#authError").innerHTML = result.mailSent === false
+          ? '<div class="form-error">Почтовый сервис не принял письмо. Повторите попытку позже.</div>'
+          : '<div class="form-success">Новый код передан почтовому сервису. Проверьте также папку «Спам».</div>';
+        setTimeout(() => { button.disabled = false; }, 30_000);
+      } catch (err) {
+        button.disabled = false;
+        $("#authError").innerHTML = `<div class="form-error">${esc(err.message)}</div>`;
+      }
     });
 
     let resetCodeRequested = false;
@@ -2532,14 +2520,13 @@
     card.appendChild(photoControls);
     const name = fieldInput("Полное имя", user.fullName);
     const subject = fieldInput("Предмет", user.subject);
-    const school = fieldInput("Школа", user.school);
     const region = fieldInput("Регион (используется ИИ для поиска мероприятий)", user.region);
     const years = fieldInput("Стаж (лет)", String(user.yearsExperience || 0));
-    [name, subject, school, region, years].forEach(f => card.appendChild(f.wrap));
+    [name, subject, region, years].forEach(f => card.appendChild(f.wrap));
     const saveBtn = el("button", { class: "btn btn-primary" }, ["Сохранить изменения"]);
     saveBtn.addEventListener("click", async () => {
       try {
-        await API.updateMe({ fullName: name.input.value.trim(), subject: subject.input.value.trim(), school: school.input.value.trim(), region: region.input.value.trim(), yearsExperience: parseInt(years.input.value || "0", 10) });
+        await API.updateMe({ fullName: name.input.value.trim(), subject: subject.input.value.trim(), region: region.input.value.trim(), yearsExperience: parseInt(years.input.value || "0", 10) });
         await renderShell();
         toast("Профиль обновлён");
       } catch (e) { apiErr(e); }

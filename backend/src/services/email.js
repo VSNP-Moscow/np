@@ -46,16 +46,20 @@ async function sendViaBrevo({ to, subject, text, html }) {
     body: JSON.stringify({
       sender: { email: process.env.MAIL_FROM, name: "НавигаторПедагога" },
       to: [{ email: to }],
+      replyTo: { email: process.env.MAIL_REPLY_TO || process.env.MAIL_FROM, name: "Поддержка НавигаторПедагога" },
       subject,
       textContent: text,
       htmlContent: html,
+      tags: ["account-code"],
+      headers: { "X-Entity-Ref-ID": crypto.randomUUID() },
     }),
     signal: AbortSignal.timeout(15_000),
   });
+  const details = await response.text();
   if (!response.ok) {
-    const details = await response.text();
     throw new Error(`Brevo delivery failed (${response.status}): ${details.slice(0, 300)}`);
   }
+  try { return JSON.parse(details); } catch { return {}; }
 }
 
 export async function sendAccountCode({ to, code, purpose }) {
@@ -66,13 +70,13 @@ export async function sendAccountCode({ to, code, purpose }) {
   const message = {
     from: process.env.MAIL_FROM,
     to,
-    subject: `${code} - ${title}`,
-    text: `Код ${action}: ${code}. Он действует ${isVerify ? "15" : "30"} минут. Если вы не запрашивали код, проигнорируйте письмо.`,
-    html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto"><h2>${title}</h2><p>Ваш код:</p><p style="font-size:30px;font-weight:700;letter-spacing:6px">${code}</p><p>Код действует ${isVerify ? "15" : "30"} минут и используется один раз.</p></div>`,
+    subject: `${title} - НавигаторПедагога`,
+    text: `НавигаторПедагога\n\nКод ${action}: ${code}\n\nОн действует ${isVerify ? "15" : "30"} минут и используется один раз. Если вы не запрашивали код, просто проигнорируйте письмо.`,
+    html: `<div style="display:none;max-height:0;overflow:hidden">Код для сервиса НавигаторПедагога: ${code}</div><div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px;color:#18201e"><div style="font-size:14px;font-weight:700;color:#087f8c">НАВИГАТОРПЕДАГОГА</div><h2 style="margin:18px 0 8px">${title}</h2><p style="margin:0 0 18px;color:#56615e">Введите этот код в открытой форме сервиса:</p><p style="margin:0 0 18px;padding:16px 18px;border:1px solid #d8dedc;background:#f5f7f6;font-size:30px;font-weight:700;letter-spacing:6px">${code}</p><p style="margin:0;color:#56615e">Код действует ${isVerify ? "15" : "30"} минут и используется один раз.</p></div>`,
   };
   if (process.env.BREVO_API_KEY) {
-    await sendViaBrevo(message);
-    return { sent: true, provider: "brevo" };
+    const result = await sendViaBrevo(message);
+    return { sent: true, provider: "brevo", messageId: result.messageId || null };
   }
   await transporter().sendMail(message);
   return { sent: true, provider: "smtp" };

@@ -4,7 +4,6 @@ const baseURL = process.env.TEST_BASE_URL || "http://127.0.0.1:4100";
 
 async function login(page) {
   await page.goto(baseURL);
-  await page.getByRole("button", { name: "Войти", exact: true }).first().click();
   await page.locator("#loginEmail").fill("user@np.ru");
   await page.locator("#loginPass").fill("123456");
   await page.locator("#loginForm").getByRole("button", { name: "Войти" }).click();
@@ -31,7 +30,12 @@ for (const viewport of [
 test("registration, recovery and admin organization editor are responsive", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(baseURL);
-  await page.getByRole("button", { name: "Начать бесплатно", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Войдите в рабочее пространство" })).toBeVisible();
+  await expect(page.locator("#loginForm")).toBeVisible();
+  await expect(page.getByText("Демо-доступ")).toHaveCount(0);
+  await expect(page.locator(".account-card")).toHaveCount(3);
+  await page.screenshot({ path: "test-artifacts/mobile-login.png", fullPage: true });
+  await page.locator("#tabRegister").click();
   await expect(page.locator("#regSubject")).toHaveAttribute("list", "subjectOptions");
   await expect(page.locator("#regRegion")).toHaveAttribute("list", "regionOptions");
   await expect(page.locator("#regOrganization option")).not.toHaveCount(1);
@@ -49,14 +53,12 @@ test("registration, recovery and admin organization editor are responsive", asyn
   await page.locator("#registerForm").getByRole("button", { name: "Создать аккаунт" }).click();
   await expect(page.locator("#verifyForm")).toBeVisible();
   await expect(page.locator("#verifyCode")).toHaveValue("");
-  await page.locator("#authClose").click();
-
-  await page.getByRole("button", { name: "Войти", exact: true }).first().click();
+  await page.locator("#changeVerificationEmail").click();
+  await page.locator("#tabLogin").click();
   await page.locator("#forgotPasswordLink").click();
   await expect(page.getByRole("heading", { name: "Восстановление пароля" })).toBeVisible();
-  await page.locator("#authClose").click();
+  await page.locator("#backToLogin").click();
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.getByRole("button", { name: "Войти", exact: true }).first().click();
   await page.locator("#loginEmail").fill("admin@np.ru");
   await page.locator("#loginPass").fill("123456");
   await page.locator("#loginForm").getByRole("button", { name: "Войти" }).click();

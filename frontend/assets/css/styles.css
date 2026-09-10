@@ -1405,3 +1405,105 @@ h1, h2, h3, h4 { color: var(--ink); }
   .leader-level { display: none; }
   .leader-coins { font-size: 11px; }
 }
+
+/* Authentication is the product entry point, not a marketing landing page. */
+.auth-home {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  background: #F2F6F4;
+}
+.auth-home-header {
+  width: min(100% - 48px, 1180px);
+  min-height: 76px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+.auth-home-header .brand { color: var(--ink); }
+.auth-home-status { color: var(--ink-soft); font-size: 13px; }
+.auth-home-main {
+  width: min(100% - 48px, 1180px);
+  margin: 0 auto;
+  padding: 54px 0 48px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(380px, 460px);
+  gap: clamp(48px, 8vw, 116px);
+  align-items: center;
+}
+.auth-intro { max-width: 620px; }
+.auth-intro-kicker {
+  margin-bottom: 16px;
+  color: var(--purple);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.auth-intro h1 {
+  max-width: 580px;
+  color: var(--ink);
+  font-size: clamp(38px, 5vw, 62px);
+  line-height: 1.04;
+}
+.auth-intro > p { max-width: 590px; margin-top: 22px; color: var(--ink-soft); font-size: 17px; }
+.auth-benefits { margin-top: 34px; display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--border); }
+.auth-benefits div { padding: 18px 16px 0 0; display: grid; gap: 5px; }
+.auth-benefits b { color: var(--ink); font-size: 13px; }
+.auth-benefits span { color: var(--ink-faint); font-size: 12px; line-height: 1.4; }
+.auth-panel { width: 100%; }
+.auth-panel .auth-card {
+  max-width: none;
+  padding: 30px;
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--purple);
+  border-radius: 8px;
+  box-shadow: 0 18px 50px rgba(24, 32, 30, .10);
+}
+.auth-card-head { margin-bottom: 20px; }
+.auth-card-head span { color: var(--ink); font-size: 20px; font-weight: 780; }
+.auth-card-head p { margin-top: 4px; color: var(--ink-soft); font-size: 13px; }
+.auth-panel .auth-tabs { margin-bottom: 20px; }
+.auth-panel .field input,
+.auth-panel .field select { min-height: 46px; font-size: 16px; }
+.quick-access {
+  width: min(100% - 48px, 1180px);
+  margin: 0 auto;
+  padding: 32px 0 46px;
+  border-top: 1px solid var(--border);
+}
+.quick-access-head { margin-bottom: 18px; display: flex; align-items: end; justify-content: space-between; gap: 28px; }
+.quick-access-head span { color: var(--purple); font-size: 11px; font-weight: 800; text-transform: uppercase; }
+.quick-access-head h2 { margin-top: 5px; color: var(--ink); font-size: 24px; }
+.quick-access-head p { max-width: 520px; color: var(--ink-soft); font-size: 13px; text-align: right; }
+.quick-access .account-card { min-height: 138px; padding: 18px; border-radius: 7px; box-shadow: none; }
+.quick-access .account-card:hover { transform: none; background: #F8FBFA; }
+.auth-home-footer { padding: 18px 24px; border-top: 1px solid var(--border); color: var(--ink-faint); font-size: 12px; text-align: center; }
+
+@media (max-width: 820px) {
+  .auth-home { display: block; }
+  .auth-home-header { width: min(100% - 32px, 620px); min-height: 66px; }
+  .auth-home-status { display: none; }
+  .auth-home-main { width: min(100% - 32px, 620px); padding: 30px 0 34px; grid-template-columns: 1fr; gap: 28px; }
+  .auth-intro-kicker { margin-bottom: 10px; }
+  .auth-intro h1 { font-size: 34px; line-height: 1.08; }
+  .auth-intro > p { margin-top: 14px; font-size: 14px; }
+  .auth-benefits { margin-top: 20px; grid-template-columns: 1fr; }
+  .auth-benefits div { padding: 10px 0; grid-template-columns: 130px 1fr; border-bottom: 1px solid var(--border); }
+  .auth-panel .auth-card { padding: 22px 18px; max-height: none; border-radius: 8px; }
+  .quick-access { width: min(100% - 32px, 620px); padding: 28px 0 34px; }
+  .quick-access-head { display: grid; gap: 8px; }
+  .quick-access-head p { text-align: left; }
+  .quick-access .accounts-grid { grid-template-columns: 1fr; gap: 10px; }
+  .quick-access .account-card { min-height: 0; }
+}
+
+@media (max-width: 390px) {
+  .auth-home-header, .auth-home-main, .quick-access { width: calc(100% - 24px); }
+  .auth-home-header .brand { font-size: 17px; }
+  .auth-intro h1 { font-size: 30px; }
+  .auth-benefits div { grid-template-columns: 1fr; gap: 2px; }
+  .auth-panel .grid-2 { grid-template-columns: 1fr; gap: 0; }
+  .auth-panel .auth-tabs button { padding: 10px 6px; }
+}

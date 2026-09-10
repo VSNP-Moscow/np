@@ -18,7 +18,7 @@ export function emailCodeExpiry(purpose) {
 
 export function mailConfigured() {
   const senderConfigured = Boolean(process.env.MAIL_FROM);
-  const httpConfigured = Boolean(process.env.BREVO_API_KEY);
+  const httpConfigured = Boolean(process.env.MAIL_RELAY_URL && process.env.MAIL_RELAY_SECRET) || Boolean(process.env.BREVO_API_KEY);
   return senderConfigured && (httpConfigured || hasSmtpConfiguration());
 }
 
@@ -66,6 +66,27 @@ async function sendViaBrevo({ to, subject, text, html }) {
   try { return JSON.parse(details); } catch { return {}; }
 }
 
+async function sendViaRelay({ to, subject, text, html }) {
+  const response = await fetch(process.env.MAIL_RELAY_URL, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${process.env.MAIL_RELAY_SECRET}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      to,
+      subject,
+      text,
+      html,
+      replyTo: process.env.MAIL_REPLY_TO || process.env.MAIL_FROM,
+    }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!response.ok) {
+    throw new Error(`Mail relay delivery failed (${response.status})`);
+  }
+}
+
 export async function sendAccountCode({ to, code, purpose }) {
   if (!mailConfigured()) return { sent: false, reason: "mail_not_configured" };
   const isVerify = purpose === "verify_email";
@@ -78,6 +99,15 @@ export async function sendAccountCode({ to, code, purpose }) {
     text: `НавигаторПедагога\n\nКод ${action}: ${code}\n\nОн действует ${isVerify ? "15" : "30"} минут и используется один раз. Если вы не запрашивали код, просто проигнорируйте письмо.`,
     html: `<div style="display:none;max-height:0;overflow:hidden">Код для сервиса НавигаторПедагога: ${code}</div><div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px;color:#18201e"><div style="font-size:14px;font-weight:700;color:#087f8c">НАВИГАТОРПЕДАГОГА</div><h2 style="margin:18px 0 8px">${title}</h2><p style="margin:0 0 18px;color:#56615e">Введите этот код в открытой форме сервиса:</p><p style="margin:0 0 18px;padding:16px 18px;border:1px solid #d8dedc;background:#f5f7f6;font-size:30px;font-weight:700;letter-spacing:6px">${code}</p><p style="margin:0;color:#56615e">Код действует ${isVerify ? "15" : "30"} минут и используется один раз.</p></div>`,
   };
+  if (process.env.MAIL_RELAY_URL && process.env.MAIL_RELAY_SECRET) {
+    try {
+      await sendViaRelay(message);
+      return { sent: true, provider: "cloudflare-yandex", messageId: null };
+    } catch (error) {
+      if (!hasSmtpConfiguration() && !process.env.BREVO_API_KEY) throw error;
+      console.error("[email] Cloudflare relay failed, using fallback:", error.message || error);
+    }
+  }
   if (hasSmtpConfiguration()) {
     try {
       const result = await transporter().sendMail(message);

@@ -51,6 +51,25 @@ router.delete("/me/avatar", requireAuth, async (req, res) => {
   res.json({ user: mapUser(rows[0]) });
 });
 
+router.get("/leaderboard", requireAuth, async (req, res) => {
+  const { rows } = await query(
+    `SELECT id, full_name, email, role, subject, school, region, years_experience, current_stage,
+            mentor_id, mentor_status, approved_by_admin, scores, avatar_color, avatar_mime,
+            CASE WHEN avatar_bytes IS NULL THEN NULL ELSE 1 END AS avatar_bytes,
+            avatar_updated_at, coins, xp, created_at
+     FROM users
+     WHERE role = 'user' AND email_verified = true
+     ORDER BY xp DESC, coins DESC, full_name ASC
+     LIMIT 100`
+  );
+  res.json({
+    leaders: rows.map((row, index) => {
+      const user = mapUser(row);
+      return { ...user, rank: index + 1, level: Math.floor(Number(user.xp || 0) / 100) + 1 };
+    }),
+  });
+});
+
 router.get("/:id/avatar", async (req, res) => {
   const { rows } = await query("SELECT avatar_mime, avatar_bytes, avatar_updated_at FROM users WHERE id=$1", [req.params.id]);
   const avatar = rows[0];

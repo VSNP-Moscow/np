@@ -251,8 +251,6 @@ export async function generateRoadmap(user) {
         candidateRoadmap.mode = "live";
         candidateRoadmap.sources = webCandidates.map((item) => item.url);
         candidateRoadmap.searchStatus = { provider: "web+ai", checked: webCandidates.length, found: normalizePriorities(candidateRoadmap.priorities).reduce((sum, p) => sum + p.events.length, 0), searchedAt: Date.now() };
-        await ingestDiscoveredEvents(candidateRoadmap.priorities, region);
-        cacheInvalidate("events:catalog:");
         return saveRoadmap(user.id, candidateRoadmap);
       }
     } catch (e) { console.error("[generateRoadmap] web candidate processing failed:", e.message || e); }
@@ -280,8 +278,6 @@ export async function generateRoadmap(user) {
     parsed.sources = sources.slice(0, 15);
     parsed.rawText = text.slice(0, 4000);
     parsed.searchStatus = { provider: "ai-search", checked: sources.length, found: normalizePriorities(parsed.priorities).reduce((sum, p) => sum + p.events.length, 0), searchedAt: Date.now() };
-    await ingestDiscoveredEvents(parsed.priorities, region);
-    cacheInvalidate("events:catalog:"); // каталог пополнился — сбрасываем кэш, чтобы список сразу увидели остальные пользователи
     return saveRoadmap(user.id, parsed);
   } catch (e) {
     console.error("[generateRoadmap] failed:", e.message || e);
@@ -344,6 +340,10 @@ export async function approveRoadmap(userId, mentorId, mentorComment) {
      WHERE user_id=$4 RETURNING *`, [version, comment, mentorId, userId]
   );
   await archiveApproved(updated[0]);
+  if (updated[0].mode === "live") {
+    await ingestDiscoveredEvents(updated[0].priorities || [], updated[0].region || "Все регионы");
+    cacheInvalidate("events:catalog:");
+  }
   return mapRoadmap(updated[0]);
 }
 

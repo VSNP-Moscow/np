@@ -14,15 +14,23 @@ async function issueCode(user, purpose) {
   const code = createEmailCode();
   await query("UPDATE email_tokens SET used_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND purpose = $2 AND used_at IS NULL", [user.id, purpose]);
   await query("INSERT INTO email_tokens (user_id, purpose, code_hash, expires_at) VALUES ($1,$2,$3,$4)", [user.id, purpose, hashEmailCode(code), emailCodeExpiry(purpose)]);
-  const delivery = await sendAccountCode({ to: user.email, code, purpose });
+  let delivery;
+  try {
+    delivery = await sendAccountCode({ to: user.email, code, purpose });
+  } catch (error) {
+    console.error(`[email] ${purpose} delivery failed for ${user.id}:`, error.message || error);
+    delivery = { sent: false, reason: "delivery_failed" };
+  }
   return { delivery, debugCode: process.env.NODE_ENV === "production" ? undefined : code };
 }
 
 async function consumeCode(userId, purpose, code) {
+  const normalizedCode = String(code || "").replace(/\D/g, "");
+  if (normalizedCode.length !== 6) return false;
   const { rows } = await query("SELECT * FROM email_tokens WHERE user_id = $1 AND purpose = $2 AND used_at IS NULL ORDER BY created_at DESC LIMIT 1", [userId, purpose]);
   const token = rows[0];
   if (!token || new Date(token.expires_at).getTime() < Date.now() || Number(token.attempts) >= 5) return false;
-  if (token.code_hash !== hashEmailCode(code)) {
+  if (token.code_hash !== hashEmailCode(normalizedCode)) {
     await query("UPDATE email_tokens SET attempts = attempts + 1 WHERE id = $1", [token.id]);
     return false;
   }

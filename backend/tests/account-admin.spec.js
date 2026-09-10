@@ -21,7 +21,8 @@ test("email verification and password reset codes are single-use", async ({ requ
   expect(blocked.response.status()).toBe(403);
   const wrong = await api(request, "/auth/verify-email", { method: "POST", data: { email, code: "999999" } });
   expect(wrong.response.status()).toBe(400);
-  const verified = await api(request, "/auth/verify-email", { method: "POST", data: { email, code: registration.body.debugCode } });
+  const pastedCode = `${registration.body.debugCode.slice(0, 3)} ${registration.body.debugCode.slice(3)}`;
+  const verified = await api(request, "/auth/verify-email", { method: "POST", data: { email, code: pastedCode } });
   expect(verified.response.ok()).toBe(true);
   const reusedVerification = await api(request, "/auth/verify-email", { method: "POST", data: { email, code: registration.body.debugCode } });
   expect(reusedVerification.response.status()).toBe(400);
@@ -76,6 +77,15 @@ test("teacher can persist a valid algorithm stage", async ({ request }) => {
   const invalid = await api(request, "/users/me", { method: "PUT", token: user.body.token, data: { currentStage: 7 } });
   expect(invalid.response.status()).toBe(400);
   await api(request, "/users/me", { method: "PUT", token: user.body.token, data: { currentStage: originalStage } });
+});
+
+test("leaderboard ranks verified teachers by XP and coins", async ({ request }) => {
+  const user = await api(request, "/auth/login", { method: "POST", data: { email: "user@np.ru", password: "123456" } });
+  const leaderboard = await api(request, "/users/leaderboard", { token: user.body.token });
+  expect(leaderboard.response.ok()).toBe(true);
+  expect(leaderboard.body.leaders.length).toBeGreaterThan(0);
+  expect(leaderboard.body.leaders[0]).toMatchObject({ rank: 1, role: "user" });
+  expect(leaderboard.body.leaders.every((item, index) => index === 0 || item.xp <= leaderboard.body.leaders[index - 1].xp)).toBe(true);
 });
 
 test("administrator manages all learning process modules", async ({ request }) => {

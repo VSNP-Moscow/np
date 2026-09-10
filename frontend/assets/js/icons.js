@@ -19,6 +19,7 @@
     building: '<path d="M3 21h18M6 21V3h12v18M9 7h2M13 7h2M9 11h2M13 11h2M10 21v-5h4v5"/>',
     clipboard: '<rect x="4" y="4" width="16" height="17" rx="2"/><path d="M9 4V2h6v2M8 9h8M8 13h8M8 17h5"/>',
     activity: '<path d="M3 12h4l2-7 4 14 2-7h6"/>',
+    trophy: '<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M7 6H3v2a4 4 0 0 0 4 4M17 6h4v2a4 4 0 0 1-4 4"/>',
     logout: '<path d="M10 17l5-5-5-5M15 12H3M15 3h5v18h-5"/>',
     menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',

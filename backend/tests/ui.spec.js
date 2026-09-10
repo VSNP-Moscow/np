@@ -40,7 +40,18 @@ test("registration, recovery and admin organization editor are responsive", asyn
   expect(overflow).toBeLessThanOrEqual(1);
   await page.screenshot({ path: "test-artifacts/mobile-registration.png", fullPage: true });
 
-  await page.locator("#tabLogin").click();
+  const email = `ui-code-${Date.now()}@test.local`;
+  await page.locator("#regName").fill("Проверка Кода");
+  await page.locator("#regEmail").fill(email);
+  await page.locator("#regPass").fill("password-123");
+  await page.locator("#regSubject").fill("Математика");
+  await page.locator("#regRegion").fill("Москва");
+  await page.locator("#registerForm").getByRole("button", { name: "Создать аккаунт" }).click();
+  await expect(page.locator("#verifyForm")).toBeVisible();
+  await expect(page.locator("#verifyCode")).toHaveValue("");
+  await page.locator("#authClose").click();
+
+  await page.getByRole("button", { name: "Войти", exact: true }).first().click();
   await page.locator("#forgotPasswordLink").click();
   await expect(page.getByRole("heading", { name: "Восстановление пароля" })).toBeVisible();
   await page.locator("#authClose").click();
@@ -95,4 +106,16 @@ test("roadmap stages, event filters, portfolio photo and personal reports work",
   await page.goto(`${baseURL}/#/events`);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
   await page.screenshot({ path: "test-artifacts/mobile-events-refresh.png", fullPage: true });
+});
+
+test("leaderboard is available on desktop and mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await login(page);
+  await page.goto(`${baseURL}/#/leaderboard`);
+  await expect(page.getByRole("heading", { name: "Рейтинг педагогов" })).toBeVisible();
+  await expect(page.locator(".leader-row")).not.toHaveCount(0);
+  await page.screenshot({ path: "test-artifacts/desktop-leaderboard.png", fullPage: true });
+  await page.setViewportSize({ width: 360, height: 800 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: "test-artifacts/mobile-leaderboard.png", fullPage: true });
 });

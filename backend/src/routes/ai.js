@@ -86,6 +86,9 @@ router.post("/roadmap/generate", requireAuth, roadmapLimiter, async (req, res) =
   if (region !== req.user.region) { await query("UPDATE users SET region = $1 WHERE id = $2", [region, req.user.id]); req.user.region = region; }
   try {
     const rm = await generateRoadmap(req.user);
+    if (req.user.mentorId) {
+      await createNotification(req.user.mentorId, "roadmap", "Новые мероприятия ждут согласования", `${req.user.fullName} запустил поиск мероприятий в интернете. Проверьте предложение и опубликуйте подходящие варианты.`, `#/mentees/${req.user.id}`);
+    }
     res.json({ roadmap: rm });
   } catch (e) {
     if (e.code === "NO_SCORES") return res.status(400).json({ error: "Сначала пройдите диагностику с ИИ-наставником" });

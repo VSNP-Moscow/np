@@ -131,6 +131,7 @@
       const data = await request("DELETE", "/users/me/avatar");
       CUR_USER = data.user; return CUR_USER;
     },
+    async getLeaderboard() { const data = await request("GET", "/users/leaderboard"); return data.leaders; },
 
     // ---- users (admin/mentor) ----
     async listUsers(role) { const data = await request("GET", "/users" + (role ? "?role=" + role : "")); return data.users; },

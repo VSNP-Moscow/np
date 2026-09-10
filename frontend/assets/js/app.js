@@ -135,7 +135,6 @@
       try {
         const result = await API.register(payload);
         $("#verifyEmail").value = result.email;
-        if (result.debugCode) $("#verifyCode").value = result.debugCode;
         setAuthTab("verify");
         $("#authError").innerHTML = result.mailSent ? '<div class="form-success">Код отправлен на почту.</div>' : '<div class="form-error">Аккаунт создан, но отправка письма пока не настроена администратором.</div>';
       } catch (err) { $("#authError").innerHTML = `<div class="form-error">${esc(err.message)}</div>`; }
@@ -151,7 +150,6 @@
     $("#resendVerification").addEventListener("click", async () => {
       try {
         const result = await API.resendVerification($("#verifyEmail").value);
-        if (result.debugCode) $("#verifyCode").value = result.debugCode;
         $("#authError").innerHTML = '<div class="form-success">Новый код создан и отправлен.</div>';
       } catch (err) { $("#authError").innerHTML = `<div class="form-error">${esc(err.message)}</div>`; }
     });
@@ -173,7 +171,6 @@
           resetCodeRequested = true;
           $("#resetCodeFields").classList.remove("hidden");
           $("#resetSubmit").textContent = "Сохранить новый пароль";
-          if (result.debugCode) $("#resetCode").value = result.debugCode;
           $("#authError").innerHTML = '<div class="form-success">Если аккаунт существует, код отправлен на почту.</div>';
         } else {
           await API.resetPassword($("#resetEmail").value.trim(), $("#resetCode").value.trim(), $("#resetNewPass").value);
@@ -188,7 +185,7 @@
   /* =========================== APP SHELL / ROUTER =========================== */
   const NAV = {
     user: [
-      { id: "dashboard", label: "Обзор", icon: "home" }, { id: "assistant", label: "ИИ-наставник", icon: "bot" },
+      { id: "dashboard", label: "Обзор", icon: "home" }, { id: "leaderboard", label: "Рейтинг педагогов", icon: "trophy" }, { id: "assistant", label: "ИИ-наставник", icon: "bot" },
       { id: "roadmap", label: "Дорожная карта", icon: "map" }, { id: "events", label: "Мероприятия", icon: "calendar" },
       { id: "assignments", label: "Задания", icon: "inbox" },
       { id: "mentor", label: "Мой наставник", icon: "userCheck" }, { id: "portfolio", label: "Портфолио", icon: "graduation" },
@@ -196,14 +193,14 @@
       { id: "notifications", label: "Уведомления", icon: "bell" }, { id: "notes", label: "Заметки", icon: "note" }, { id: "profile", label: "Профиль", icon: "settings" },
     ],
     mentor: [
-      { id: "dashboard", label: "Обзор", icon: "home" }, { id: "mentees", label: "Мои педагоги", icon: "graduation" },
+      { id: "dashboard", label: "Обзор", icon: "home" }, { id: "leaderboard", label: "Рейтинг педагогов", icon: "trophy" }, { id: "mentees", label: "Мои педагоги", icon: "graduation" },
       { id: "groups", label: "Группы", icon: "users" }, { id: "assignments", label: "Задания", icon: "inbox" }, { id: "tests", label: "Конструктор тестов", icon: "clipboard" },
       { id: "events", label: "Мероприятия", icon: "calendar" }, { id: "files", label: "Файлы", icon: "paperclip" },
       { id: "reports", label: "Отчёты", icon: "chart" }, { id: "notifications", label: "Уведомления", icon: "bell" },
       { id: "notes", label: "Заметки", icon: "note" }, { id: "profile", label: "Профиль", icon: "settings" },
     ],
     admin: [
-      { id: "dashboard", label: "Обзор", icon: "home" }, { id: "users", label: "Педагоги и наставники", icon: "users" },
+      { id: "dashboard", label: "Обзор", icon: "home" }, { id: "leaderboard", label: "Рейтинг педагогов", icon: "trophy" }, { id: "users", label: "Педагоги и наставники", icon: "users" },
       { id: "organizations", label: "Организации и дизайн", icon: "building" },
       { id: "groups", label: "Группы", icon: "users" }, { id: "tests", label: "Тесты", icon: "clipboard" },
       { id: "assignments", label: "Задания", icon: "inbox" }, { id: "events", label: "Мероприятия", icon: "calendar" },
@@ -390,6 +387,7 @@
       const view = currentView;
       main.innerHTML = "";
       if (view === "dashboard") return await renderDashboard(main, user);
+      if (view === "leaderboard") return await renderLeaderboard(main, user);
       if (view === "assistant") return await renderAssistant(main, user);
       if (view === "roadmap") return await renderRoadmap(main, user);
       if (view === "events") return await renderEvents(main, user);
@@ -507,6 +505,32 @@
       el("div", {}, [el("div", { style: "font-size:13.5px; font-weight:700;" }, [e.title]), el("div", { style: "font-size:12px; color:var(--ink-faint);" }, [`${e.date} · ${e.time || ""}`])]),
       el("span", { class: "badge badge-" + comp.color }, [comp.icon]),
     ]);
+  }
+
+  async function renderLeaderboard(main, currentUser) {
+    topbar(main, "Рейтинг педагогов", "Уровень определяется накопленным опытом; при равенстве выше педагог с большим числом койнов");
+    const leaders = await API.getLeaderboard();
+    if (!leaders.length) { main.appendChild(emptyState("", "Рейтинг пока пуст", "Первые позиции появятся после выполнения заданий и мероприятий.")); return; }
+
+    const podium = el("div", { class: "leader-podium" });
+    leaders.slice(0, 3).forEach((leader) => podium.appendChild(el("article", { class: `leader-card rank-${leader.rank}` }, [
+      el("div", { class: "leader-rank" }, [String(leader.rank)]),
+      avatarNode(leader, "lg"),
+      el("div", { class: "leader-name" }, [leader.fullName]),
+      el("div", { class: "leader-subject" }, [leader.subject || "Предмет не указан"]),
+      el("div", { class: "leader-score" }, [el("b", {}, [`Уровень ${leader.level}`]), el("span", {}, [`${leader.coins || 0} койнов · ${leader.xp || 0} XP`])]),
+    ])));
+    main.appendChild(podium);
+
+    const list = el("div", { class: "leader-list" });
+    leaders.forEach((leader) => list.appendChild(el("div", { class: `leader-row${leader.id === currentUser.id ? " is-me" : ""}` }, [
+      el("b", { class: "leader-position" }, [String(leader.rank)]),
+      avatarNode(leader, "sm"),
+      el("div", { class: "leader-person" }, [el("b", {}, [leader.fullName]), el("span", {}, [`${leader.subject || "Без предмета"} · ${leader.region || "Регион не указан"}`])]),
+      el("div", { class: "leader-level" }, [el("b", {}, [`Уровень ${leader.level}`]), el("span", {}, [`${leader.xp || 0} XP`])]),
+      el("b", { class: "leader-coins" }, [`${leader.coins || 0} койнов`]),
+    ])));
+    main.appendChild(list);
   }
 
   async function renderMentorDashboard(main, user) {
@@ -1128,7 +1152,47 @@
   let eventSearchTimer = null;
   async function renderEvents(main, user) {
     const isAdmin = user.role === "admin";
-    topbar(main, "Мероприятия", "Подборка обучения по компетенциям, формату и региону", isAdmin ? [addBtn("+ Добавить", () => openEventModal(null))] : null);
+    const actions = [];
+    if (isAdmin) actions.push(addBtn("+ Добавить", () => openEventModal(null)));
+    if (user.role === "user" && API.hasScores(user)) {
+      const webSearch = el("button", { class: "btn btn-primary btn-sm" }, [appIcon("search", 18), "Найти в интернете"]);
+      webSearch.addEventListener("click", async () => {
+        webSearch.disabled = true;
+        webSearch.replaceChildren(appIcon("search", 18), document.createTextNode("Ищу мероприятия..."));
+        try {
+          const roadmap = await API.generateRoadmap(user.region);
+          const proposal = roadmap.proposal || roadmap;
+          const found = (proposal.priorities || []).reduce((sum, priority) => sum + (priority.events || []).length, 0);
+          toast(user.mentorId ? `Найдено ${found}. Предложение отправлено наставнику.` : `Найдено ${found}. Выберите наставника для согласования.`);
+          await renderMain();
+        } catch (error) { apiErr(error); webSearch.disabled = false; webSearch.replaceChildren(appIcon("search", 18), document.createTextNode("Найти в интернете")); }
+      });
+      actions.push(webSearch);
+    }
+    topbar(main, "Мероприятия", "Каталог и интернет-подборка с обязательной проверкой наставника", actions.length ? actions : null);
+
+    if (user.role === "user") {
+      const roadmap = await API.getRoadmap().catch(() => null);
+      const proposal = roadmap?.proposal || (roadmap?.status && roadmap.status !== "approved" ? roadmap : null);
+      const proposedEvents = (proposal?.priorities || []).flatMap((priority) => (priority.events || []).map((event) => ({ ...event, competency: priority.competency })));
+      if (proposal && proposedEvents.length && (proposal.mode === "live" || proposal.searchStatus?.provider?.includes("web") || proposal.searchStatus?.provider === "ai-search")) {
+        const review = el("section", { class: "web-event-review" }, [
+          el("div", { class: "web-event-review-head" }, [
+            el("div", {}, [el("span", { class: "eyebrow" }, ["ИНТЕРНЕТ-ПОИСК"]), el("h3", {}, ["Найдено и отправлено наставнику"]), el("p", {}, ["До подтверждения эти мероприятия не попадут в общий каталог и рабочую дорожную карту."])]),
+            el("span", { class: "badge badge-yellow" }, [`На согласовании · ${proposedEvents.length}`]),
+          ]),
+        ]);
+        proposedEvents.slice(0, 8).forEach((event) => {
+          const comp = API.competency(event.competency);
+          const row = el("div", { class: "web-event-row" }, [
+            el("div", {}, [el("b", {}, [event.title]), el("span", {}, [`${comp?.label || "Компетенция"}${event.source ? " · " + event.source : ""}`])]),
+          ]);
+          if (event.url) row.appendChild(el("a", { href: event.url, target: "_blank", rel: "noopener", class: "text-link" }, ["Проверить источник"]));
+          review.appendChild(row);
+        });
+        main.appendChild(review);
+      }
+    }
 
     const searchWrap = el("form", { class: "event-search" });
     const searchField = el("label", { class: "event-search-field" }, [appIcon("search", 19)]);

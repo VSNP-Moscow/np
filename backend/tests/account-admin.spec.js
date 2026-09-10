@@ -86,3 +86,9 @@ test("administrator manages all learning process modules", async ({ request }) =
   await api(request, `/tests/${customTest.body.test.id}`, { method: "DELETE", token: admin.body.token });
   await api(request, `/groups/${group.body.group.id}`, { method: "DELETE", token: admin.body.token });
 });
+
+test("mail test endpoint is restricted to administrators", async ({ request }) => {
+  const user = await api(request, "/auth/login", { method: "POST", data: { email: "user@np.ru", password: "123456" } });
+  const forbidden = await api(request, "/auth/mail-test", { method: "POST", token: user.body.token, data: { email: "recipient@test.local" } });
+  expect(forbidden.response.status()).toBe(403);
+});

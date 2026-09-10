@@ -2,7 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
 import { query, mapUser } from "../db.js";
-import { signToken, requireAuth } from "../middleware/auth.js";
+import { signToken, requireAuth, requireRole } from "../middleware/auth.js";
 import { createEmailCode, emailCodeExpiry, hashEmailCode, mailConfigured, sendAccountCode } from "../services/email.js";
 
 const router = Router();
@@ -97,6 +97,14 @@ router.post("/reset-password", codeLimiter, async (req, res) => {
   await query("UPDATE users SET password_hash = $1 WHERE id = $2", [await bcrypt.hash(password, 12), user.id]);
   res.locals.auditUserId = user.id;
   res.json({ ok: true });
+});
+
+router.post("/mail-test", requireAuth, requireRole("admin"), codeLimiter, async (req, res) => {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) return res.status(400).json({ error: "Укажите корректный email" });
+  const delivery = await sendAccountCode({ to: email, code: createEmailCode(), purpose: "verify_email" });
+  if (!delivery.sent) return res.status(503).json({ error: "SMTP не настроен" });
+  res.json({ sent: true });
 });
 
 router.post("/login", async (req, res) => {

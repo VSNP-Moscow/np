@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>НавигаторПедагога — цифровое наставничество для молодых учителей</title>
+<meta name="description" content="Современная платформа наставничества для молодых педагогов: ИИ-диалог, дорожная карта по 6 компетенциям и каталог мероприятий.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%23087F8C%22/><text x=%2250%22 y=%2264%22 text-anchor=%22middle%22 font-size=%2243%22 fill=%22white%22>НП</text></svg>">
+<link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body>
+
+<!-- ======================= AUTH HOME ======================= -->
+<div id="landing" class="auth-home">
+  <header class="auth-home-header">
+    <div class="brand"><span class="brand-mark">НП</span><span>НавигаторПедагога</span></div>
+    <span class="auth-home-status">Цифровая среда наставничества</span>
+  </header>
+  <main class="auth-home-main">
+    <section class="auth-intro">
+      <div class="auth-intro-kicker">Профессиональное развитие педагога</div>
+      <h1>Войдите в рабочее пространство</h1>
+      <p>Диагностика компетенций, совместная дорожная карта с наставником, мероприятия, отчёты и портфолио в одном сервисе.</p>
+      <div class="auth-benefits">
+        <div><b>6 направлений</b><span>единая карта компетенций</span></div>
+        <div><b>Наставник + ИИ</b><span>согласованные рекомендации</span></div>
+        <div><b>Один профиль</b><span>прогресс и материалы сохраняются</span></div>
+      </div>
+    </section>
+
+    <section id="authModal" class="auth-panel" aria-label="Вход и регистрация">
+      <div class="auth-card">
+        <div class="auth-card-head">
+          <span>Личный кабинет</span>
+          <p>Используйте рабочую электронную почту</p>
+        </div>
+    <div class="auth-tabs">
+      <button id="tabLogin" class="active">Вход</button>
+      <button id="tabRegister">Регистрация</button>
+    </div>
+    <div id="authError"></div>
+    <form id="loginForm">
+      <div class="field"><label>Email</label><input type="email" id="loginEmail" required placeholder="user@np.ru"></div>
+      <div class="field"><label>Пароль</label><input type="password" id="loginPass" required placeholder="123456"></div>
+      <button class="btn btn-primary btn-block" type="submit">Войти</button>
+      <button class="link-button" id="forgotPasswordLink" type="button">Забыли пароль?</button>
+    </form>
+    <form id="registerForm" class="hidden">
+      <div class="field"><label>Полное имя</label><input type="text" id="regName" required placeholder="Мария Сергеевна Иванова"></div>
+      <div class="field"><label>Email</label><input type="email" id="regEmail" required placeholder="you@school.ru"></div>
+      <div class="field"><label>Пароль</label><input type="password" id="regPass" required minlength="8" autocomplete="new-password" placeholder="Минимум 8 символов"></div>
+      <div class="grid-2">
+        <div class="field"><label>Предмет</label><input type="search" id="regSubject" list="subjectOptions" required placeholder="Начните вводить"></div>
+        <div class="field"><label>Стаж (лет)</label><input type="number" id="regYears" min="0" max="60" value="0" required></div>
+      </div>
+      <div class="field"><label>Образовательная организация</label><select id="regOrganization"><option value="">Другая организация</option></select></div>
+      <div class="field"><label>Регион</label><input type="search" id="regRegion" list="regionOptions" required placeholder="Начните вводить регион"></div>
+      <p class="form-hint" style="margin:-8px 0 12px; text-align:left;">По региону ИИ-наставник будет искать реальные мероприятия для молодых педагогов.</p>
+      <div class="field"><label>Роль</label>
+        <select id="regRole">
+          <option value="user">Молодой педагог</option>
+          <option value="mentor">Наставник</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-block" type="submit">Создать аккаунт</button>
+    </form>
+    <form id="verifyForm" class="hidden">
+      <h3>Подтверждение почты</h3>
+      <p class="form-hint auth-copy">Введите шестизначный код из письма.</p>
+      <div class="field"><label>Email</label><input type="email" id="verifyEmail" required readonly></div>
+      <div class="field"><label>Код</label><input type="text" id="verifyCode" required inputmode="numeric" maxlength="12" autocomplete="one-time-code" placeholder="000000"></div>
+      <button class="btn btn-primary btn-block" type="submit">Подтвердить</button>
+      <button class="link-button" id="resendVerification" type="button">Отправить код ещё раз</button>
+      <button class="link-button" id="changeVerificationEmail" type="button">Исправить адрес почты</button>
+    </form>
+    <form id="resetForm" class="hidden">
+      <h3>Восстановление пароля</h3>
+      <div class="field"><label>Email</label><input type="email" id="resetEmail" required placeholder="you@school.ru"></div>
+      <div id="resetCodeFields" class="hidden">
+        <div class="field"><label>Код из письма</label><input type="text" id="resetCode" inputmode="numeric" maxlength="12" autocomplete="one-time-code" placeholder="000000"></div>
+        <div class="field"><label>Новый пароль</label><input type="password" id="resetNewPass" minlength="8" placeholder="Минимум 8 символов"></div>
+      </div>
+      <button class="btn btn-primary btn-block" id="resetSubmit" type="submit">Получить код</button>
+      <button class="link-button" id="backToLogin" type="button">Вернуться ко входу</button>
+    </form>
+    <datalist id="subjectOptions">
+      <option value="Русский язык"><option value="Литература"><option value="Математика"><option value="Алгебра"><option value="Геометрия"><option value="История"><option value="Обществознание"><option value="География"><option value="Биология"><option value="Физика"><option value="Химия"><option value="Информатика"><option value="Иностранный язык"><option value="Начальные классы"><option value="Физическая культура"><option value="Музыка"><option value="Изобразительное искусство"><option value="Технология"><option value="Основы безопасности и защиты Родины"><option value="Дошкольное образование">
+    </datalist>
+    <datalist id="regionOptions">
+      <option value="Москва"><option value="Санкт-Петербург"><option value="Севастополь"><option value="Московская область"><option value="Ленинградская область"><option value="Республика Адыгея"><option value="Республика Алтай"><option value="Республика Башкортостан"><option value="Республика Бурятия"><option value="Республика Дагестан"><option value="Республика Ингушетия"><option value="Кабардино-Балкарская Республика"><option value="Республика Калмыкия"><option value="Карачаево-Черкесская Республика"><option value="Республика Карелия"><option value="Республика Коми"><option value="Республика Крым"><option value="Республика Марий Эл"><option value="Республика Мордовия"><option value="Республика Саха (Якутия)"><option value="Республика Северная Осетия — Алания"><option value="Республика Татарстан"><option value="Республика Тыва"><option value="Удмуртская Республика"><option value="Республика Хакасия"><option value="Чеченская Республика"><option value="Чувашская Республика"><option value="Алтайский край"><option value="Забайкальский край"><option value="Камчатский край"><option value="Краснодарский край"><option value="Красноярский край"><option value="Пермский край"><option value="Приморский край"><option value="Ставропольский край"><option value="Хабаровский край"><option value="Амурская область"><option value="Архангельская область"><option value="Астраханская область"><option value="Белгородская область"><option value="Брянская область"><option value="Владимирская область"><option value="Волгоградская область"><option value="Вологодская область"><option value="Воронежская область"><option value="Ивановская область"><option value="Иркутская область"><option value="Калининградская область"><option value="Калужская область"><option value="Кемеровская область — Кузбасс"><option value="Кировская область"><option value="Костромская область"><option value="Курганская область"><option value="Курская область"><option value="Липецкая область"><option value="Магаданская область"><option value="Мурманская область"><option value="Нижегородская область"><option value="Новгородская область"><option value="Новосибирская область"><option value="Омская область"><option value="Оренбургская область"><option value="Орловская область"><option value="Пензенская область"><option value="Псковская область"><option value="Ростовская область"><option value="Рязанская область"><option value="Самарская область"><option value="Саратовская область"><option value="Сахалинская область"><option value="Свердловская область"><option value="Смоленская область"><option value="Тамбовская область"><option value="Тверская область"><option value="Томская область"><option value="Тульская область"><option value="Тюменская область"><option value="Ульяновская область"><option value="Челябинская область"><option value="Ярославская область"><option value="Еврейская автономная область"><option value="Ненецкий автономный округ"><option value="Ханты-Мансийский автономный округ — Югра"><option value="Чукотский автономный округ"><option value="Ямало-Ненецкий автономный округ">
+    </datalist>
+      </div>
+    </section>
+  </main>
+
+  <section class="quick-access" aria-labelledby="quickAccessTitle">
+    <div class="quick-access-head">
+      <div>
+        <span>Быстрый вход</span>
+        <h2 id="quickAccessTitle">Тестовые аккаунты</h2>
+      </div>
+      <p>Карточки временно оставлены для проверки ролей. Пароль для всех аккаунтов: <b>123456</b>.</p>
+    </div>
+    <div class="accounts-grid" id="demoAccounts"></div>
+  </section>
+
+  <footer class="auth-home-footer">Методология Поляковой Г.Д. · Данные хранятся в защищённой базе сервиса</footer>
+</div>
+
+<!-- ======================= APP SHELL ======================= -->
+<div id="shell" class="shell hidden"></div>
+
+<div id="toastWrap" class="toast-wrap"></div>
+
+<script>
+  // В объединённом режиме фронтенд и API работают на одном адресе.
+  // Внешний API можно указать до загрузки страницы через window.NP_API_BASE.
+  window.NP_API_BASE = window.NP_API_BASE || "/api";
+</script>
+<script src="assets/js/bootstrap.js"></script>
+</body>
+</html>

@@ -1,0 +1,258 @@
+/* ============================================================
+   НавигаторПедагога — клиент API
+   Заменяет прежний localStorage-слой на реальные запросы к бэкенду.
+   ============================================================ */
+(function (global) {
+  "use strict";
+
+  // Измените на адрес вашего развёрнутого бэкенда после деплоя.
+  // Если фронтенд открыт с того же origin, что и API — оставьте пустым.
+  const API_BASE = window.NP_API_BASE || "/api";
+
+  const COMPETENCIES = [
+    { id: "subject", icon: "📚", label: "Предметные", short: "Предмет", color: "green", desc: "Знание предмета, научная база" },
+    { id: "pedagogy", icon: "🧠", label: "Психолого-педагогическое", short: "Психология", color: "purple", desc: "Управление классом, работа с учениками" },
+    { id: "method", icon: "📋", label: "Методическое", short: "Методика", color: "magenta", desc: "Планирование, разработка рабочих программ" },
+    { id: "digital", icon: "💻", label: "Цифровое / ИКТ", short: "Цифра", color: "yellow", desc: "МЭШ, ЭОР, медиаграмотность" },
+    { id: "communication", icon: "🗣️", label: "Коммуникативное", short: "Общение", color: "purple", desc: "Родители, коллеги, администрация" },
+    { id: "personal", icon: "⭐", label: "Личностное", short: "Бренд", color: "magenta", desc: "Бренд педагога, конкурсы, лидерство" },
+  ];
+  const ALGO_STAGES = ["Диагностика дефицитов", "Создание пары наставник—наставляемый", "Корректировка карты", "Обучение и мероприятия", "Рефлексивный анализ", "Цифровое портфолио"];
+  const NOTE_CATS = ["Личное", "Урок", "Наставничество", "Мероприятие", "Рефлексия", "Администрирование"];
+  const ROLE = { USER: "user", MENTOR: "mentor", ADMIN: "admin" };
+
+  let TOKEN = localStorage.getItem("np_token") || null;
+  let CUR_USER = null;
+
+  async function request(method, path, body) {
+    const headers = { "Content-Type": "application/json" };
+    if (TOKEN) headers.Authorization = "Bearer " + TOKEN;
+    let res;
+    try {
+      res = await fetch(API_BASE + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    } catch (e) {
+      const err = new Error("Не удалось связаться с сервером. Проверьте, что бэкенд запущен и доступен по адресу " + API_BASE);
+      err.network = true;
+      throw err;
+    }
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* empty body */ }
+    if (!res.ok) {
+      const err = new Error((data && data.error) || `Ошибка сервера (${res.status})`);
+      err.status = res.status;
+      err.code = data?.code;
+      throw err;
+    }
+    return data;
+  }
+
+  async function download(path, filename) {
+    const headers = TOKEN ? { Authorization: "Bearer " + TOKEN } : {};
+    const res = await fetch(API_BASE + path, { headers });
+    if (!res.ok) {
+      let data = null;
+      try { data = await res.json(); } catch (e) { /* binary or empty response */ }
+      throw new Error(data?.error || `Ошибка загрузки (${res.status})`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename || "download";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  const API = {
+    ROLE, COMPETENCIES, ALGO_STAGES, NOTE_CATS,
+    apiBase: API_BASE,
+
+    competency(id) { return COMPETENCIES.find((c) => c.id === id); },
+    initials(u) {
+      if (!u || !u.fullName) return "?";
+      const p = u.fullName.trim().split(/\s+/);
+      return p.length >= 2 ? (p[0][0] + p[1][0]).toUpperCase() : p[0][0].toUpperCase();
+    },
+    roleLabel(role) { return role === ROLE.ADMIN ? "Администратор" : role === ROLE.MENTOR ? "Наставник" : "Молодой педагог"; },
+    hasScores(u) { return Boolean(u && u.scores && Object.values(u.scores).some((v) => v > 0)); },
+    avgScore(u) {
+      if (!u || !u.scores) return 0;
+      const vals = Object.values(u.scores).filter((v) => v > 0);
+      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    },
+
+    // ---- auth ----
+    async login(email, password) {
+      const data = await request("POST", "/auth/login", { email, password });
+      TOKEN = data.token; CUR_USER = data.user;
+      localStorage.setItem("np_token", TOKEN);
+      return data.user;
+    },
+    async register(payload) {
+      return request("POST", "/auth/register", payload);
+    },
+    async verifyEmail(email, code) {
+      const data = await request("POST", "/auth/verify-email", { email, code });
+      TOKEN = data.token; CUR_USER = data.user;
+      localStorage.setItem("np_token", TOKEN);
+      return data.user;
+    },
+    async resendVerification(email) { return request("POST", "/auth/resend-verification", { email }); },
+    async forgotPassword(email) { return request("POST", "/auth/forgot-password", { email }); },
+    async resetPassword(email, code, password) { return request("POST", "/auth/reset-password", { email, code, password }); },
+    async authOptions() { return request("GET", "/auth/options"); },
+    async fetchMe() {
+      if (!TOKEN) return null;
+      try {
+        const data = await request("GET", "/auth/me");
+        CUR_USER = data.user;
+        return CUR_USER;
+      } catch (e) {
+        TOKEN = null; localStorage.removeItem("np_token");
+        return null;
+      }
+    },
+    getCurUser() { return CUR_USER; },
+    isLoggedIn() { return Boolean(TOKEN); },
+    logout() { TOKEN = null; CUR_USER = null; localStorage.removeItem("np_token"); },
+    async updateMe(payload) {
+      const data = await request("PUT", "/users/me", payload);
+      CUR_USER = data.user;
+      return CUR_USER;
+    },
+    avatarUrl(user) { return user?.hasAvatar ? `${API_BASE}/users/${user.id}/avatar?v=${encodeURIComponent(user.avatarUpdatedAt || "")}` : ""; },
+    async uploadAvatar(dataBase64, mime) {
+      const data = await request("PUT", "/users/me/avatar", { dataBase64, mime });
+      CUR_USER = data.user; return CUR_USER;
+    },
+    async deleteAvatar() {
+      const data = await request("DELETE", "/users/me/avatar");
+      CUR_USER = data.user; return CUR_USER;
+    },
+    async getLeaderboard() { const data = await request("GET", "/users/leaderboard"); return data.leaders; },
+
+    // ---- users (admin/mentor) ----
+    async listUsers(role) { const data = await request("GET", "/users" + (role ? "?role=" + role : "")); return data.users; },
+    async pendingMentees() { const data = await request("GET", "/users?role=user&status=pending"); return data.users; },
+    async getUser(id) { const data = await request("GET", "/users/" + id); return data.user; },
+    async setMentor(userId, mentorId) { const data = await request("PUT", `/users/${userId}/mentor`, { mentorId }); return data.user; },
+    async setApproval(userId, approved) { const data = await request("PUT", `/users/${userId}/approval`, { approved }); return data.user; },
+    async deleteUser(id) { return request("DELETE", "/users/" + id); },
+    async adminUpdateUser(id, payload) { const data = await request("PUT", `/users/${id}/admin`, payload); return data.user; },
+    async requestMentor(mentorId) { const data = await request("POST", `/users/mentors/${mentorId}/request`); return data.user; },
+    async confirmMentee(menteeId) { const data = await request("POST", `/users/mentees/${menteeId}/confirm`); return data.user; },
+    async declineMentee(menteeId) { const data = await request("POST", `/users/mentees/${menteeId}/decline`); return data.user; },
+
+    // ---- organizations and visual themes ----
+    async listOrganizations() { const data = await request("GET", "/organizations"); return data.organizations; },
+    async createOrganization(payload) { const data = await request("POST", "/organizations", payload); return data.organization; },
+    async updateOrganization(id, payload) { const data = await request("PUT", `/organizations/${id}`, payload); return data.organization; },
+    async archiveOrganization(id) { return request("DELETE", `/organizations/${id}`); },
+    async getOrganizationTheme(id) { const data = await request("GET", `/organizations/${id}/theme`); return data.theme; },
+    async saveOrganizationTheme(id, payload) { const data = await request("PUT", `/organizations/${id}/theme`, payload); return data.theme; },
+    async organizationOverview(id) { const data = await request("GET", `/organizations/${id}/overview`); return data.overview; },
+    async listActivity(limit = 100) { const data = await request("GET", `/activity?limit=${limit}`); return data.activities; },
+
+    // ---- events ----
+    async listEvents(area, search, filters = {}) {
+      const params = new URLSearchParams();
+      if (area && area !== "all") params.set("area", area);
+      if (search) params.set("q", search);
+      if (filters.type && filters.type !== "all") params.set("type", filters.type);
+      if (filters.region) params.set("region", filters.region);
+      if (filters.status && filters.status !== "all") params.set("status", filters.status);
+      const data = await request("GET", "/events" + (params.size ? "?" + params : ""));
+      return data.events;
+    },
+    async createEvent(ev) { const data = await request("POST", "/events", ev); return data.event; },
+    async updateEvent(id, ev) { const data = await request("PUT", "/events/" + id, ev); return data.event; },
+    async deleteEvent(id) { return request("DELETE", "/events/" + id); },
+    async completeEvent(id, completed, reflection) { const data = await request("POST", `/events/${id}/complete`, { completed, reflection }); return data.event; },
+    async getQuiz(eventId) { return request("GET", `/events/${eventId}/quiz`); },
+    async submitQuiz(eventId, answers) { return request("POST", `/events/${eventId}/quiz/submit`, { answers }); },
+
+    // ---- notes ----
+    async listNotes() { const data = await request("GET", "/notes"); return data.notes; },
+    async createNote(n) { const data = await request("POST", "/notes", n); return data.note; },
+    async updateNote(id, n) { const data = await request("PUT", "/notes/" + id, n); return data.note; },
+    async deleteNote(id) { return request("DELETE", "/notes/" + id); },
+
+    // ---- messages ----
+    async listMessages(otherId) { const data = await request("GET", "/messages/" + otherId); return data.messages; },
+    async sendMessage(otherId, text, attachment) { const data = await request("POST", "/messages/" + otherId, { text, attachment }); return data.message; },
+    async startVideoCall(otherId, provider = "telemost") { return request("POST", `/messages/${otherId}/video-call`, { provider }); },
+
+    // ---- files ----
+    async listFiles() { const data = await request("GET", "/files"); return data.files; },
+    async downloadFile(id, name) { return download(`/files/${id}`, name); },
+
+    // ---- notifications ----
+    async getNotifications() { return request("GET", "/notifications"); },
+    async readNotification(id) { return request("POST", `/notifications/${id}/read`); },
+    async readAllNotifications() { return request("POST", "/notifications/read-all"); },
+
+    // ---- AI ----
+    async aiStatus() { return request("GET", "/ai/status"); },
+    async getAiChat() { return request("GET", "/ai/chat"); },
+    async startDiagnostic() { const data = await request("POST", "/ai/diagnostic/start"); return data.messages; },
+    async replyDiagnostic(text) { return request("POST", "/ai/diagnostic/reply", { text }); },
+    async chatWithAi(text) { const data = await request("POST", "/ai/chat", { text }); return data.messages; },
+    async quickActions() { const data = await request("GET", "/ai/quick-actions"); return data.actions; },
+    async generateRoadmap(region) { const data = await request("POST", "/ai/roadmap/generate", { region }); return data.roadmap; },
+    async getRoadmap() { const data = await request("GET", "/ai/roadmap"); return data.roadmap; },
+    async addProgress(item) { const data = await request("POST", "/ai/roadmap/progress", item); return data.progress; },
+    async listProgress() { const data = await request("GET", "/ai/roadmap/progress"); return data.progress; },
+    async reportProgress(id, reportText, usefulnessRating) { const data = await request("POST", `/ai/roadmap/progress/${id}/report`, { reportText, usefulnessRating }); return data.progress; },
+    async reviewReport(text) { return request("POST", "/ai/roadmap/progress/review", { text }); },
+    async getDigest() { return request("GET", "/ai/digest"); },
+    async getNudge() { return request("GET", "/ai/nudge"); },
+    async getTips(competencyId) { return request("GET", "/ai/tips/" + competencyId); },
+    async getPortfolio(force) { return request("GET", "/ai/portfolio" + (force ? "?force=1" : "")); },
+    async addPortfolioItem(item) { const data = await request("POST", "/ai/portfolio/items", item); return data.item; },
+    async deletePortfolioItem(id) { return request("DELETE", "/ai/portfolio/items/" + id); },
+    async downloadPortfolioPdf() { return download("/ai/portfolio/pdf", "Портфолио.pdf"); },
+    async mentorRateProgress(id, mentorRating, mentorFeedback, decision = "approve") { const data = await request("POST", `/ai/roadmap/progress/${id}/mentor-rate`, { mentorRating, mentorFeedback, decision }); return data.progress; },
+    async menteeReports() { const data = await request("GET", "/ai/roadmap/progress/mentees"); return data.progress; },
+    async getMenteeRoadmap(userId) { const data = await request("GET", `/ai/roadmap/mentee/${userId}`); return data.workflow; },
+    async saveMenteeRoadmap(userId, payload) { const data = await request("PUT", `/ai/roadmap/mentee/${userId}`, payload); return data.roadmap; },
+    async approveMenteeRoadmap(userId, mentorComment) { const data = await request("POST", `/ai/roadmap/mentee/${userId}/approve`, { mentorComment }); return data.roadmap; },
+    async requestMenteeRoadmapChanges(userId, comment) { const data = await request("POST", `/ai/roadmap/mentee/${userId}/request-changes`, { comment }); return data.roadmap; },
+    async reviseMenteeRoadmap(userId) { const data = await request("POST", `/ai/roadmap/mentee/${userId}/ai-revise`); return data.workflow; },
+
+    // ---- структурированная диагностика (реальный тест из диссертации) ----
+    async diagnosticItems() { return request("GET", "/diagnostic/items"); },
+    async diagnosticMyAnswers() { const data = await request("GET", "/diagnostic/my-answers"); return data.answers; },
+    async submitDiagnostic(answers) { const data = await request("POST", "/diagnostic/submit", { answers }); return data.scores; },
+
+    // ---- группы ----
+    async createGroup(name, description) { const data = await request("POST", "/groups", { name, description }); return data.group; },
+    async listGroups() { const data = await request("GET", "/groups"); return data.groups; },
+    async getGroup(id) { return request("GET", "/groups/" + id); },
+    async deleteGroup(id) { return request("DELETE", "/groups/" + id); },
+    async addGroupMember(groupId, userId) { return request("POST", `/groups/${groupId}/members`, { userId }); },
+    async removeGroupMember(groupId, userId) { return request("DELETE", `/groups/${groupId}/members/${userId}`); },
+
+    // ---- конструктор тестов ----
+    async createTest(title, description, questions) { const data = await request("POST", "/tests", { title, description, questions }); return data.test; },
+    async listTests() { const data = await request("GET", "/tests"); return data.tests; },
+    async getTest(id) { const data = await request("GET", "/tests/" + id); return data.test; },
+    async updateTest(id, payload) { const data = await request("PUT", "/tests/" + id, payload); return data.test; },
+    async deleteTest(id) { return request("DELETE", "/tests/" + id); },
+
+    // ---- задания ----
+    async createAssignment(payload) { const data = await request("POST", "/assignments", payload); return data.assignment; },
+    async listAssignments() { const data = await request("GET", "/assignments"); return data.assignments; },
+    async getAssignment(id) { return request("GET", "/assignments/" + id); },
+    async submitAssignment(id, payload) { const data = await request("POST", `/assignments/${id}/submit`, payload); return data.target; },
+    async gradeAssignment(id, userId, score, total, feedback) { const data = await request("POST", `/assignments/${id}/grade/${userId}`, { score, total, feedback }); return data.target; },
+    async deleteAssignment(id) { return request("DELETE", "/assignments/" + id); },
+
+    // ---- reports ----
+    async getReport() { return request("GET", "/reports/summary"); },
+    async downloadReportCsv() { return download("/reports/export.csv", "Отчёт.csv"); },
+  };
+
+  global.API = API;
+})(window);

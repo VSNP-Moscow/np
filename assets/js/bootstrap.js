@@ -9,7 +9,8 @@
       if (!response.ok) throw new Error("Endpoint unavailable");
       const config = await response.json();
       const url = new URL(config.apiBase);
-      if (url.protocol !== "https:" || !url.hostname.endsWith(".trycloudflare.com") || url.pathname !== "/api") {
+      const allowedHost = [".trycloudflare.com", ".lhr.life", ".localhost.run"].some(suffix => url.hostname.endsWith(suffix));
+      if (url.protocol !== "https:" || !allowedHost || url.pathname !== "/api" || url.username || url.password || url.port) {
         throw new Error("Invalid API endpoint");
       }
       window.NP_API_BASE = url.href;

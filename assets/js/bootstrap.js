@@ -1,5 +1,6 @@
 (async function () {
   "use strict";
+  const assetQuery = document.currentScript ? new URL(document.currentScript.src).search : "";
   if (location.hostname === "vsnp-moscow.github.io") {
     try {
       const registry = "https://raw.githubusercontent.com/VSNP-Moscow/np/gh-pages/endpoint.json";
@@ -26,7 +27,7 @@
   for (const file of ["api.js", "icons.js", "app.js"]) {
     await new Promise((resolve, reject) => {
       const script = document.createElement("script");
-      script.src = "assets/js/" + file;
+      script.src = "assets/js/" + file + assetQuery;
       script.onload = resolve;
       script.onerror = reject;
       document.body.appendChild(script);

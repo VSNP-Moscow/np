@@ -2561,6 +2561,8 @@
 
   async function boot() {
     bindLanding();
+    $("#landing").inert = false;
+    $("#landing").setAttribute("aria-busy", "false");
     if (API.isLoggedIn()) {
       const user = await API.fetchMe();
       if (user) await enterApp();

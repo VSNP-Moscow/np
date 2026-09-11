@@ -318,7 +318,7 @@
   function startNotificationPolling() {
     clearInterval(notificationPollTimer);
     notificationPollTimer = setInterval(async () => {
-      if (!API.isLoggedIn()) return;
+      if (document.hidden || !API.isLoggedIn()) return;
       try {
         const data = await API.getNotifications();
         const count = data.unread || 0;
@@ -1538,7 +1538,7 @@
     composer.appendChild(selected); composer.appendChild(bar); card.appendChild(composer);
     setTimeout(() => { scroll.scrollTop = scroll.scrollHeight; }, 0);
     chatPollTimer = setInterval(async () => {
-      if (!["mentor", "mentees"].includes(currentView)) return;
+      if (document.hidden || !["mentor", "mentees"].includes(currentView)) return;
       try {
         const messages = await API.listMessages(otherUser.id);
         if ((messages[messages.length - 1]?.id || null) !== latestMessageId) renderMessages(messages);

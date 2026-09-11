@@ -104,7 +104,7 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
+app.listen(PORT, process.env.HOST || "0.0.0.0", () => {
   console.log(`НавигаторПедагога API запущен на порту ${PORT}`);
   const ai = aiProviderInfo();
   console.log(hasApiKey() ? `✅ AI подключён: ${ai.provider} / ${ai.model}.` : "⚠️  Ключ AI-провайдера не задан — ИИ работает в офлайн-режиме.");

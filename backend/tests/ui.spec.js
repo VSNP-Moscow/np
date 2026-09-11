@@ -4,6 +4,7 @@ const baseURL = process.env.TEST_BASE_URL || "http://127.0.0.1:4100";
 
 async function login(page) {
   await page.goto(baseURL);
+  await expect(page.locator("#landing")).toHaveAttribute("aria-busy", "false", { timeout: 20000 });
   await page.locator("#loginEmail").fill("user@np.ru");
   await page.locator("#loginPass").fill("123456");
   await page.locator("#loginForm").getByRole("button", { name: "Войти" }).click();

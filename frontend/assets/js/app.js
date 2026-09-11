@@ -2559,11 +2559,15 @@
     }
   });
 
-  document.addEventListener("DOMContentLoaded", async () => {
+  async function boot() {
     bindLanding();
+    $("#landing").inert = false;
+    $("#landing").setAttribute("aria-busy", "false");
     if (API.isLoggedIn()) {
       const user = await API.fetchMe();
       if (user) await enterApp();
     }
-  });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot, { once: true });
+  else boot();
 })();

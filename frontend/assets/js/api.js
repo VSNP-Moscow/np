@@ -110,7 +110,9 @@
         CUR_USER = data.user;
         return CUR_USER;
       } catch (e) {
-        TOKEN = null; localStorage.removeItem("np_token");
+        if (e.status === 401) {
+          TOKEN = null; localStorage.removeItem("np_token");
+        }
         return null;
       }
     },
